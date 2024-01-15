@@ -2,8 +2,6 @@ from datetime import datetime
 import requests
 from kubernetes import client, config
 
-from code.main import DEBUG
-
 
 class Node:
     def __init__(self, name, ca_ip):
@@ -11,9 +9,9 @@ class Node:
         self.ca_ip = ca_ip
         self.containers = dict()
 
-    def update_containers(self):
+    def update_containers(self, debug=False):
         self.containers = dict()
-        if DEBUG:
+        if debug:
             config.load_kube_config()
         else:
             config.load_incluster_config()

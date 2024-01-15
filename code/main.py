@@ -25,7 +25,7 @@ if __name__ == '__main__':
                     nodes.append(Node(pod.spec.node_name, pod.status.pod_ip))
 
     for node in nodes:
-        node.update_containers()
+        node.update_containers(debug=DEBUG)
         print(node.name, node.ca_ip, ", pods:", list(node.get_containers().values()))
 
     # simple vpa scaling, meant to monitor and scale while running an operation
@@ -41,7 +41,7 @@ if __name__ == '__main__':
                     updated_container_id = container_id
                 elif updated_container_id == container_id and cpu_p < 10:
                     patch_pod(pod_name, cpu_request="500m", cpu_limit="500m",
-                              container_name=container_name)
+                              container_name=container_name, debug=DEBUG)
                     updated_container_id = ''
 
         time.sleep(5)

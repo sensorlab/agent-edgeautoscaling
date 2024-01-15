@@ -1,11 +1,9 @@
 from kubernetes import client, config
 
-from main import DEBUG
-
 
 # wip
-def remove_worker_pods_except_first():
-    if DEBUG:
+def remove_worker_pods_except_first(debug=False):
+    if debug:
         config.load_kube_config()
     else:
         config.load_incluster_config()
@@ -30,8 +28,8 @@ def remove_worker_pods_except_first():
 
 
 # wip
-def create_worker_pod(node_name=None):
-    if DEBUG:
+def create_worker_pod(node_name=None, debug=False):
+    if debug:
         config.load_kube_config()
     else:
         config.load_incluster_config()
@@ -67,8 +65,8 @@ def create_worker_pod(node_name=None):
         print(f"Error creating pod: {e}")
 
 
-def create_pod_from(source_pod_name, node_name=None):
-    if DEBUG:
+def create_pod_from(source_pod_name, node_name=None, debug=False):
+    if debug:
         config.load_kube_config()
     else:
         config.load_incluster_config()
@@ -105,8 +103,8 @@ def create_pod_from(source_pod_name, node_name=None):
 
 
 def patch_pod(pod_name, cpu_request="1", cpu_limit="1", memory_request=None, memory_limit=None,
-              container_name="ray-worker"):
-    if DEBUG:
+              container_name="ray-worker", debug=False):
+    if debug:
         config.load_kube_config()
     else:
         config.load_incluster_config()
