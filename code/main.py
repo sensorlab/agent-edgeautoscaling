@@ -5,9 +5,14 @@ from kubernetes import client, config
 from node import Node
 from pod_controller import patch_pod
 
+DEBUG = True
+
 if __name__ == '__main__':
     nodes = []
-    config.load_kube_config()
+    if DEBUG:
+        config.load_kube_config()
+    else:
+        config.load_incluster_config()
     v1 = client.CoreV1Api()
     namespace = "kube-system"
 

@@ -2,6 +2,8 @@ from datetime import datetime
 import requests
 from kubernetes import client, config
 
+from code.main import DEBUG
+
 
 class Node:
     def __init__(self, name, ca_ip):
@@ -11,7 +13,10 @@ class Node:
 
     def update_containers(self):
         self.containers = dict()
-        config.load_kube_config()
+        if DEBUG:
+            config.load_kube_config()
+        else:
+            config.load_incluster_config()
         v1 = client.CoreV1Api()
 
         try:
