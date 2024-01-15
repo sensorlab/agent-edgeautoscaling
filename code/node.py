@@ -7,10 +7,10 @@ class Node:
     def __init__(self, name, ca_ip):
         self.name = name
         self.ca_ip = ca_ip
-        self.containers = set()
+        self.containers = dict()
 
-    # when not scaling with hpa, its enough to be called once
     def update_containers(self):
+        self.containers = dict()
         config.load_kube_config()
         v1 = client.CoreV1Api()
 
@@ -21,60 +21,55 @@ class Node:
             for pod in ret.items:
                 if pod.status.phase == "Running":
                     for container_status in pod.status.container_statuses:
-                        container_info = (
-                            pod.metadata.name,
-                            container_status.name,
-                            container_status.container_id.split("//")[1],
-                            pod.status.pod_ip
-                        )
-                        self.containers.add(container_info)
+                        self.containers[container_status.container_id.split("//")[1]] = (pod.metadata.name,
+                                                                                         container_status.name,
+                                                                                         pod.status.pod_ip)
 
         except Exception as e:
             print(f"Error: {e}")
 
     def get_containers(self):
-        return list(self.containers)
+        return self.containers
 
-    def get_containers_usage(self):
-        for pod_name, container_name, container_id, pod_ip in self.get_containers():
-            containers_stats_url = f"http://{self.ca_ip}:8080/api/v1.3/subcontainers/kubepods/burstable/"
+    def get_container_usage(self, container_id, container_name):
+        containers_stats_url = f"http://{self.ca_ip}:8080/api/v1.3/subcontainers/kubepods/burstable/"
 
-            response = requests.get(containers_stats_url)
-            if response.status_code == 200:
-                containers_stats = response.json()
-                container = next((c for c in containers_stats if container_id in c["name"]), None)
-                if container:
-                    current_cpu_usage_nanoseconds = container["stats"][-1]["cpu"]["usage"]["total"]
-                    previous_cpu_usage_nanoseconds = container["stats"][-2]["cpu"]["usage"]["total"]
+        response = requests.get(containers_stats_url)
+        if response.status_code == 200:
+            containers_stats = response.json()
+            container = next((c for c in containers_stats if container_id in c["name"]), None)
+            if container:
+                current_cpu_usage_nanoseconds = container["stats"][-1]["cpu"]["usage"]["total"]
+                previous_cpu_usage_nanoseconds = container["stats"][-2]["cpu"]["usage"]["total"]
 
-                    current_timestamp_str = container["stats"][-1]["timestamp"].split('.')[0] + 'Z'
-                    previous_timestamp_str = container["stats"][-2]["timestamp"].split('.')[0] + 'Z'
+                current_timestamp_str = container["stats"][-1]["timestamp"].split('.')[0] + 'Z'
+                previous_timestamp_str = container["stats"][-2]["timestamp"].split('.')[0] + 'Z'
 
-                    current_timestamp = datetime.strptime(current_timestamp_str, "%Y-%m-%dT%H:%M:%SZ")
-                    previous_timestamp = datetime.strptime(previous_timestamp_str, "%Y-%m-%dT%H:%M:%SZ")
+                current_timestamp = datetime.strptime(current_timestamp_str, "%Y-%m-%dT%H:%M:%SZ")
+                previous_timestamp = datetime.strptime(previous_timestamp_str, "%Y-%m-%dT%H:%M:%SZ")
 
-                    time_interval = current_timestamp - previous_timestamp
-                    time_interval_seconds = time_interval.total_seconds()
+                time_interval = current_timestamp - previous_timestamp
+                time_interval_seconds = time_interval.total_seconds()
 
-                    cpu_usage_delta_nanoseconds = current_cpu_usage_nanoseconds - previous_cpu_usage_nanoseconds
-                    cpu_usage_per_second = cpu_usage_delta_nanoseconds / time_interval_seconds
+                cpu_usage_delta_nanoseconds = current_cpu_usage_nanoseconds - previous_cpu_usage_nanoseconds
+                cpu_usage_per_second = cpu_usage_delta_nanoseconds / time_interval_seconds
 
-                    cpu_usage_millicores = cpu_usage_per_second / 1000000
-                    total_cpu_capacity_nanoseconds = container["spec"]["cpu"]["limit"]
-                    cpu_usage_percentage = (cpu_usage_per_second / (total_cpu_capacity_nanoseconds * 1_000_000)) * 100
+                cpu_usage_millicores = cpu_usage_per_second / 1000000
+                total_cpu_capacity_nanoseconds = container["spec"]["cpu"]["limit"]
+                cpu_usage_percentage = (cpu_usage_per_second / (total_cpu_capacity_nanoseconds * 1_000_000)) * 100
 
-                    current_memory_usage_bytes = container["stats"][-1]["memory"]["usage"]
+                current_memory_usage_bytes = container["stats"][-1]["memory"]["usage"]
 
-                    memory_usage_megabytes = current_memory_usage_bytes / (1024 * 1024)
-                    total_memory_capacity_bytes = container["spec"]["memory"]["limit"]
-                    memory_usage_percentage = (current_memory_usage_bytes / total_memory_capacity_bytes) * 100
+                memory_usage_megabytes = current_memory_usage_bytes / (1024 * 1024)
+                total_memory_capacity_bytes = container["spec"]["memory"]["limit"]
+                memory_usage_percentage = (current_memory_usage_bytes / total_memory_capacity_bytes) * 100
 
-                    return cpu_usage_millicores, cpu_usage_percentage, memory_usage_megabytes, memory_usage_percentage
-                else:
-                    print(f"Container {container_name} with {container_id} not found")
-                    return 0, 0, 0, 0
+                return cpu_usage_millicores, cpu_usage_percentage, memory_usage_megabytes, memory_usage_percentage
             else:
-                print("Failed to fetch containers stats")
+                print(f"Container {container_name} with {container_id} not found")
+                return 0, 0, 0, 0
+        else:
+            print("Failed to fetch containers stats")
 
     def get_usage(self):
         summary_url = f"http://{self.ca_ip}:8080/api/v2.0/summary"

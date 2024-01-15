@@ -21,21 +21,22 @@ if __name__ == '__main__':
 
     for node in nodes:
         node.update_containers()
-        print(node.name, node.ca_ip)
+        print(node.name, node.ca_ip, ", pods:", list(node.get_containers().values()))
 
     # simple vpa scaling, meant to monitor and scale while running an operation
-    updated = False
+    updated_container_id = ''
     while True:
         for node in nodes:
-            cpu, cpu_p, _, _ = node.get_containers_usage()
+            for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
+                cpu, cpu_p, _, _ = node.get_container_usage(container_id, container_name)
 
-            if cpu_p > 95.0 and not updated:
-                patch_pod(node.get_containers()[0][0], cpu_request="2", cpu_limit="2",
-                          container_name=node.get_containers()[0][1])
-                updated = True
-            elif updated and cpu_p < 10:
-                patch_pod(node.get_containers()[0][0], cpu_request="500m", cpu_limit="500m",
-                          container_name=node.get_containers()[0][1])
-                updated = False
+                if cpu_p > 95.0 and updated_container_id == '':
+                    patch_pod(pod_name, cpu_request="2", cpu_limit="2",
+                              container_name=container_name)
+                    updated_container_id = container_id
+                elif updated_container_id == container_id and cpu_p < 10:
+                    patch_pod(pod_name, cpu_request="500m", cpu_limit="500m",
+                              container_name=container_name)
+                    updated_container_id = ''
 
-        time.sleep(3)
+        time.sleep(5)

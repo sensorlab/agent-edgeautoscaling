@@ -35,7 +35,7 @@ if __name__ == '__main__':
 
             print("Containers-------")
             container_name, container_status, container_id, pod_ip = node.get_containers()[0]
-            container_cpu, container_cpu_percentage, container_memory, container_memory_percentage = node.get_containers_usage()
+            container_cpu, container_cpu_percentage, container_memory, container_memory_percentage = node.get_container_usage()
             print(f"Usage for container {container_name} at pod {container_name}:{pod_ip}")
             print(f"CPU Usage : {container_cpu:.2f} mC, {container_cpu_percentage:.2f}%")
             print(f"Memory Usage: {container_memory:.2f} MB, {container_memory_percentage:.2f}%")
