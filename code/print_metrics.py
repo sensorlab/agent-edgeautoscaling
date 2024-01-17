@@ -1,25 +1,9 @@
 import time
 
-from kubernetes import client, config
-
-from node import Node
+from utils import init_nodes
 
 if __name__ == '__main__':
-    nodes = []
-    config.load_kube_config()
-    v1 = client.CoreV1Api()
-
-    ret = v1.list_pod_for_all_namespaces(label_selector='name=cadvisor')
-    ret_arm64 = v1.list_pod_for_all_namespaces(label_selector='name=cadvisor-arm64')
-    for pod in ret.items + ret_arm64.items:
-        if pod.metadata.namespace == "kube-system":
-            for status in pod.status.container_statuses:
-                if status.name == "cadvisor" or status.name == "cadvisor-arm64":
-                    nodes.append(Node(pod.spec.node_name, pod.status.pod_ip))
-
-    for node in nodes:
-        node.update_containers(debug=True)
-        print(node.name, node.ca_ip)
+    nodes = init_nodes(debug=True)
 
     while True:
         for node in nodes:
@@ -36,7 +20,7 @@ if __name__ == '__main__':
             print("Containers-------")
             for container_id, (container_status, container_name, pod_ip) in list(node.get_containers().items()):
                 container_cpu, container_cpu_percentage, container_memory, container_memory_percentage = node.get_container_usage(
-                    container_id, container_name)
+                    container_id)
                 print(f"Usage for container {container_name} at pod {container_name}:{pod_ip}")
                 print(f"CPU Usage : {container_cpu:.2f} mC, {container_cpu_percentage:.2f}%")
                 print(f"Memory Usage: {container_memory:.2f} MB, {container_memory_percentage:.2f}%")
