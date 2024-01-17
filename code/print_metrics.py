@@ -1,18 +1,18 @@
 import time
 
-from node import Node
 from kubernetes import client, config
+
+from node import Node
 
 if __name__ == '__main__':
     nodes = []
     config.load_kube_config()
     v1 = client.CoreV1Api()
-    namespace = "kube-system"
 
     ret = v1.list_pod_for_all_namespaces(label_selector='name=cadvisor')
     ret_arm64 = v1.list_pod_for_all_namespaces(label_selector='name=cadvisor-arm64')
     for pod in ret.items + ret_arm64.items:
-        if pod.metadata.namespace == namespace:
+        if pod.metadata.namespace == "kube-system":
             for status in pod.status.container_statuses:
                 if status.name == "cadvisor" or status.name == "cadvisor-arm64":
                     nodes.append(Node(pod.spec.node_name, pod.status.pod_ip))

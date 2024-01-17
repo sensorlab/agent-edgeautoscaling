@@ -143,7 +143,7 @@ spec:
               resource: requests.cpu
       resources:
         limits:
-          cpu: "2"
+          cpu: "1"
           memory: "4Gi"
         requests:
           cpu: "1"
@@ -174,12 +174,12 @@ spec:
         - resourceName: memory
           restartPolicy: NotRequired
       resources:
-        limits:
-          cpu: "1"
-          memory: 2Gi
         requests:
-          cpu: "1"
+          cpu: "500m"
           memory: 1Gi
+        limits:
+          cpu: "500m"
+          memory: 2Gi
       imagePullPolicy: IfNotPresent
       command: [ "/bin/bash", "-c", "--" ]
       args:
