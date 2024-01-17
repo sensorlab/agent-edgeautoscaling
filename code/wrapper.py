@@ -6,7 +6,7 @@ from utils import init_nodes
 def execute_on_best_pod(function, *args, **kwargs):
     @ray.remote(num_cpus=4)
     def wrapper_function():
-        function(*args, **kwargs)
+        return function(*args, **kwargs)
 
     nodes = init_nodes(True)
 
@@ -28,6 +28,7 @@ def execute_on_best_pod(function, *args, **kwargs):
                 best_cpu_p, best_pod_ip, best_pod_name = cpu_p, pod_ip, pod_name
 
     print(f"Started ray job on pod {best_pod_name}:{best_pod_ip} with {best_cpu_p}%")
-    ray.get(wrapper_function.options(resources={f"node:{best_pod_ip}": 1.0}).remote())
+    result = ray.get(wrapper_function.options(resources={f"node:{best_pod_ip}": 1.0}).remote())
 
     ray.shutdown()
+    return result
