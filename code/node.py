@@ -113,7 +113,7 @@ class Node:
     def get_allocated_resources(self):
         allocated_cpu = 0
         allocated_memory = 0
-        for pod_name, container_name, container_id, _ in self.get_containers():
+        for container_id, _ in list(self.get_containers().items()):
             containers_stats_url = f"http://{self.ca_ip}:8080/api/v1.3/subcontainers/kubepods/burstable/"
             response = requests.get(containers_stats_url)
             if response.status_code == 200:

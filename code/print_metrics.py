@@ -18,7 +18,7 @@ if __name__ == '__main__':
                     nodes.append(Node(pod.spec.node_name, pod.status.pod_ip))
 
     for node in nodes:
-        node.update_containers()
+        node.update_containers(debug=True)
         print(node.name, node.ca_ip)
 
     while True:
@@ -34,12 +34,13 @@ if __name__ == '__main__':
             print(f"Unallocated: {unallocated_cpu} mc, {unallocated_memory} ")
 
             print("Containers-------")
-            container_name, container_status, container_id, pod_ip = node.get_containers()[0]
-            container_cpu, container_cpu_percentage, container_memory, container_memory_percentage = node.get_container_usage()
-            print(f"Usage for container {container_name} at pod {container_name}:{pod_ip}")
-            print(f"CPU Usage : {container_cpu:.2f} mC, {container_cpu_percentage:.2f}%")
-            print(f"Memory Usage: {container_memory:.2f} MB, {container_memory_percentage:.2f}%")
-            print('')
+            for container_id, (container_status, container_name, pod_ip) in list(node.get_containers().items()):
+                container_cpu, container_cpu_percentage, container_memory, container_memory_percentage = node.get_container_usage(
+                    container_id, container_name)
+                print(f"Usage for container {container_name} at pod {container_name}:{pod_ip}")
+                print(f"CPU Usage : {container_cpu:.2f} mC, {container_cpu_percentage:.2f}%")
+                print(f"Memory Usage: {container_memory:.2f} MB, {container_memory_percentage:.2f}%")
+                print('')
 
         time.sleep(1)
         print("\033c")
