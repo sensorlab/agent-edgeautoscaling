@@ -53,3 +53,15 @@ sudo k3s server
 ```shell
 sudo /usr/local/bin/k3s-uninstall.sh
 ```
+
+# Safely shutdown
+
+drain nodes to evict all pods
+```shell
+kubectl drain <node-name> --ignore-daemonsets --delete-emptydir-data --force --grace-period=0
+```
+
+on each node
+```shell
+sudo /usr/local/bin/k3s-killall.sh
+```

@@ -36,3 +36,15 @@ microk8s add-node
 ```shell
 microk8s join IP_ADDRESS:25000/TOKEN
 ```
+
+# Safely shutdown
+
+drain nodes to evict all pods
+```shell
+microk8s kubectl drain <node-name> --ignore-daemonsets --delete-emptydir-data --force --grace-period=0
+```
+
+on each node
+```shell
+sudo microk8s stop
+```
