@@ -35,7 +35,7 @@ class Node:
     def get_containers(self):
         return self.containers
 
-    def get_container_usage(self, container_id, container_name):
+    def get_container_usage(self, container_id):
         containers_stats_url = f"http://{self.ca_ip}:8080/api/v1.3/subcontainers/kubepods/burstable/"
 
         response = requests.get(containers_stats_url)
@@ -70,7 +70,7 @@ class Node:
 
                 return cpu_usage_millicores, cpu_usage_percentage, memory_usage_megabytes, memory_usage_percentage
             else:
-                print(f"Container {container_name} with {container_id} not found")
+                print(f"Container {container_id} not found")
                 return 0, 0, 0, 0
         else:
             print("Failed to fetch containers stats")
@@ -124,7 +124,7 @@ class Node:
                     allocated_memory += container['spec']['memory']['limit']
         return allocated_cpu, allocated_memory
 
-    # wip: doesnt calculate accurately
+    # wip: doesn't calculate accurately (just calculates how much the ray pods have allocated)
     def get_unallocated_capacity(self):
         total_cpu_capacity, total_memory_capacity = self.get_node_capacity()
         allocated_cpu, allocated_memory = self.get_allocated_resources()
