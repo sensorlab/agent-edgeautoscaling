@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elasticity-module
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticity-module
+  template:
+    metadata:
+      labels:
+        app: elasticity-module
+    spec:
+      nodeSelector:
+        cluster: vm
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+      containers:
+        - name: module
+          image: wrathchild14/python-elacticity-module:latest
+          resources:
+            limits:
+              cpu: "500m"
+              memory: 2Gi
+            requests:
+              cpu: "500m"
+              memory: 1Gi
+          imagePullPolicy: Always
+          command: ["python", "main.py"]
