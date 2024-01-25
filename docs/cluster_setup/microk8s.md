@@ -32,6 +32,11 @@ microk8s.kubectl config view --raw > ~/.kube/config
 microk8s add-node
 ```
 
+worker nodes should be added into `/etc/hotsts` of master. Example:
+```
+ip_addr hostname
+```
+
 - other nodes:
 ```shell
 microk8s join IP_ADDRESS:25000/TOKEN
@@ -48,3 +53,13 @@ on each node
 ```shell
 sudo microk8s stop
 ```
+
+# Ingress
+
+```shell
+microk8s helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+microk8s helm repo update
+microk8s helm install ingress-nginx ingress-nginx/ingress-nginx
+```
+
+Apply the configuration in `configs/nvg_api/ingress`
