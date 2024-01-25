@@ -23,7 +23,7 @@ def execute_on_best_pod(function, *args, **kwargs):
     best_cpu_p, best_pod_ip, best_pod_name = 100.0, '', ''
     for node in nodes:
         for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
-            cpu, cpu_p, _, _ = node.get_container_usage(container_id)
+            (_, _, cpu_p), (_, _, _) = node.get_container_usage(container_id)
             if cpu_p < best_cpu_p:
                 best_cpu_p, best_pod_ip, best_pod_name = cpu_p, pod_ip, pod_name
 

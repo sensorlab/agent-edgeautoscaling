@@ -1,4 +1,5 @@
 from kubernetes import client, config
+from utils import increment_last_number
 
 
 # wip
@@ -81,13 +82,9 @@ def create_pod_from(source_pod_name, node_name=None, debug=False):
 
     new_pod = client.V1Pod()
     new_pod.metadata = client.V1ObjectMeta(
-        name=f'{source_pod_name}-new',
+        name=increment_last_number(source_pod_name),
         namespace=namespace,
-        labels={
-            "type": "ray",
-            "app": "ray-cluster-worker",
-            "component": "ray-worker"
-        }
+        labels=source_pod.metadata.labels
     )
 
     new_pod.spec = source_pod.spec

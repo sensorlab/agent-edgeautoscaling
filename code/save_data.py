@@ -29,7 +29,7 @@ if __name__ == '__main__':
     while time.time() < end_time:
         for node in nodes:
             for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
-                cpu, cpu_p, memory_mb, memory_p = node.get_container_usage(container_id)
+                (_, cpu, cpu_p), (_ ,memory_mb, memory_p) = node.get_container_usage(container_id)
                 max_cpu, max_memory = node.get_node_capacity()  # todo, no need to get it every time
 
                 timeseries_data.append({

@@ -5,12 +5,13 @@ from kubernetes import client, config
 
 
 class Node:
-    def __init__(self, name, ca_ip):
+    def __init__(self, name, ca_ip, ip):
         self.name = name
+        self.ip = ip
         self.ca_ip = ca_ip
         self.containers = dict()
 
-    def update_containers(self, debug=False):
+    def update_containers(self, debug=False, custom_label='type=ray'):
         self.containers = dict()
         if debug:
             config.load_kube_config()
@@ -20,7 +21,7 @@ class Node:
 
         try:
             ret = v1.list_pod_for_all_namespaces(
-                label_selector='type=ray', field_selector=f'spec.nodeName={self.name}'
+                label_selector=custom_label, field_selector=f'spec.nodeName={self.name}'
             )
             for pod in ret.items:
                 if pod.status.phase == "Running":
@@ -59,16 +60,16 @@ class Node:
                 cpu_usage_per_second = cpu_usage_delta_nanoseconds / time_interval_seconds
 
                 cpu_usage_millicores = cpu_usage_per_second / 1000000
-                total_cpu_capacity_nanoseconds = container["spec"]["cpu"]["limit"]
-                cpu_usage_percentage = (cpu_usage_per_second / (total_cpu_capacity_nanoseconds * 1_000_000)) * 100
+                cpu_limit_mc = container["spec"]["cpu"]["limit"]
+                cpu_usage_percentage = (cpu_usage_per_second / (cpu_limit_mc * 1_000_000)) * 100
 
                 current_memory_usage_bytes = container["stats"][-1]["memory"]["usage"]
 
                 memory_usage_megabytes = current_memory_usage_bytes / (1024 * 1024)
-                total_memory_capacity_bytes = container["spec"]["memory"]["limit"]
-                memory_usage_percentage = (current_memory_usage_bytes / total_memory_capacity_bytes) * 100
+                memory_limit_bytes = container["spec"]["memory"]["limit"]
+                memory_usage_percentage = (current_memory_usage_bytes / memory_limit_bytes) * 100
 
-                return cpu_usage_millicores, cpu_usage_percentage, memory_usage_megabytes, memory_usage_percentage
+                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (memory_limit_bytes, memory_usage_megabytes, memory_usage_percentage)
             else:
                 print(f"Container {container_id} not found")
                 return 0, 0, 0, 0

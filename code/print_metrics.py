@@ -3,7 +3,7 @@ import time
 from utils import init_nodes
 
 if __name__ == '__main__':
-    nodes = init_nodes(debug=True)
+    nodes = init_nodes(debug=True, custom_label='app=nvg-api')
 
     while True:
         for node in nodes:
@@ -19,7 +19,7 @@ if __name__ == '__main__':
 
             print("Containers-------")
             for container_id, (container_status, container_name, pod_ip) in list(node.get_containers().items()):
-                container_cpu, container_cpu_percentage, container_memory, container_memory_percentage = node.get_container_usage(
+                (_, container_cpu, container_cpu_percentage), (_, container_memory, container_memory_percentage) = node.get_container_usage(
                     container_id)
                 print(f"Usage for container {container_name} at pod {container_name}:{pod_ip}")
                 print(f"CPU Usage : {container_cpu:.2f} mC, {container_cpu_percentage:.2f}%")

@@ -1,10 +1,12 @@
+import re
+
 from kubernetes import client, config
 
 from node import Node
 
 
 # returns list(nodes) from the connected cluster
-def init_nodes(debug=False):
+def init_nodes(debug=False, custom_label='type=ray'):
     nodes = []
     if debug:
         config.load_kube_config()
@@ -18,12 +20,26 @@ def init_nodes(debug=False):
         if pod.metadata.namespace == "kube-system":
             for status in pod.status.container_statuses:
                 if status.name == "cadvisor" or status.name == "cadvisor-arm64":
-                    nodes.append(Node(pod.spec.node_name, pod.status.pod_ip))
+                    node_ip = None
+                    if pod.status.host_ip:
+                        node_ip = pod.status.host_ip
+                    nodes.append(Node(pod.spec.node_name, pod.status.pod_ip, node_ip))
 
     print("Observable pods/nodes:")
     for node in nodes:
-        node.update_containers(debug=debug)
-        print(f"{node.name}, ca: {node.ca_ip}, pods: {list(node.get_containers().values())}")
+        node.update_containers(debug=debug, custom_label=custom_label)
+        print(f"{node.name}:{node.ip}, ca: {node.ca_ip}, pods: {list(node.get_containers().values())}")
     print()
 
     return nodes
+
+def increment_last_number(input_string):
+    match = re.search(r'(\d+)$', input_string)
+
+    if match:
+        last_number = int(match.group(1))
+        new_number = last_number + 1
+        result_string = re.sub(r'\d+$', str(new_number), input_string)
+        return result_string
+    else:
+        return input_string + '1'
