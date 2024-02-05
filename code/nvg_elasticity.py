@@ -10,18 +10,6 @@ from concurrent.futures import ThreadPoolExecutor
 from utils import init_nodes
 
 
-def delete_pod(pod_name, debug=True):
-    if debug:
-        config.load_kube_config()
-    else:
-        config.load_incluster_config()
-    v1 = client.CoreV1Api()
-    namespace = 'default'
-    try:
-        v1.delete_namespaced_pod(pod_name, namespace=namespace)
-        print(f"Deleted pod {pod_name}")
-    except Exception as e:
-        print(f"Error deleting pod {pod_name}: {e}")
 
 def get_loadbalancer_external_port(service_name, namespace='default'):
     try:

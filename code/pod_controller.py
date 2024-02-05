@@ -2,6 +2,20 @@ from kubernetes import client, config
 from utils import increment_last_number
 
 
+def delete_pod(pod_name, debug=True):
+    if debug:
+        config.load_kube_config()
+    else:
+        config.load_incluster_config()
+    v1 = client.CoreV1Api()
+    namespace = 'default'
+    try:
+        v1.delete_namespaced_pod(pod_name, namespace=namespace)
+        print(f"Deleted pod {pod_name}")
+    except Exception as e:
+        print(f"Error deleting pod {pod_name}: {e}")
+
+
 # wip
 def remove_worker_pods_except_first(debug=False):
     if debug:
@@ -95,8 +109,10 @@ def create_pod_from(source_pod_name, node_name=None, debug=False):
     try:
         created_pod = v1.create_namespaced_pod(namespace=namespace, body=new_pod)
         print(f"New pod '{created_pod.metadata.name}' created successfully")
+        return created_pod.metadata.name
     except Exception as e:
         print(f"Error creating pod: {e}")
+        return None
 
 
 def patch_pod(pod_name, cpu_request="1", cpu_limit="1", memory_request=None, memory_limit=None,

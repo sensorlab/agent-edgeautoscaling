@@ -1,6 +1,6 @@
 import time
 
-from pod_controller import create_pod_from, patch_pod
+from pod_controller import create_pod_from, patch_pod, delete_pod
 from utils import init_nodes
 
 DEBUG = True
@@ -17,20 +17,19 @@ if __name__ == '__main__':
                         container_name=container_name, debug=DEBUG)
 
     updated_container_ids = []
-    created_pod = False
+    created_pods = []
     while True:
         for node in nodes:
             for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
-                (cpu_limit, cpu, cpu_p), (_, _, _) = node.get_container_usage(container_id)
+                (cpu_limit, cpu, cpu_p), (_, _, _), (_, _) = node.get_container_usage(container_id)
                 
                 if cpu_p > UPPER:
                     cpu_limit = min(max_cpu, int(cpu_limit) + scale_cpu)
                     patch_pod(pod_name, cpu_request=f"{cpu_limit}m", cpu_limit=f"{cpu_limit}m",
                               container_name=container_name, debug=DEBUG)
                     # primitive, todo
-                    if cpu_limit == max_cpu and not created_pod:
-                        create_pod_from(pod_name, 'raspberrypi1', debug=DEBUG)
-                        created_pod = True
+                    if cpu_limit == max_cpu and created_pods.empty():
+                        created_pods.append(create_pod_from(pod_name, 'raspberrypi2', debug=DEBUG))
                     if container_id not in updated_container_ids:
                         updated_container_ids.append(container_id)
                 elif container_id in updated_container_ids and cpu_p < LOWER:
@@ -39,5 +38,6 @@ if __name__ == '__main__':
                               container_name=container_name, debug=DEBUG)
                     if cpu_limit == min_cpu:
                         updated_container_ids.remove(container_id)
-
+                    if created_pods:
+                        delete_pod(created_pods.pop(), debug=DEBUG)
         time.sleep(5)

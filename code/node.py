@@ -69,7 +69,17 @@ class Node:
                 memory_limit_bytes = container["spec"]["memory"]["limit"]
                 memory_usage_percentage = (current_memory_usage_bytes / memory_limit_bytes) * 100
 
-                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (memory_limit_bytes, memory_usage_megabytes, memory_usage_percentage)
+                io_read_curr = container["stats"][-1]["diskio"]["io_service_bytes"][0]['stats']['Read']
+                io_read_prev = container["stats"][-2]["diskio"]["io_service_bytes"][0]['stats']['Read']
+                io_delta = io_read_curr - io_read_prev
+                io_read_per_second = io_delta / time_interval_seconds
+
+                io_write_curr = container["stats"][-1]["diskio"]["io_service_bytes"][0]['stats']['Write']
+                io_write_prev = container["stats"][-2]["diskio"]["io_service_bytes"][0]['stats']['Write']
+                io_delta = io_write_curr - io_write_prev
+                io_write_per_second = io_delta / time_interval_seconds
+                
+                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (memory_limit_bytes, memory_usage_megabytes, memory_usage_percentage), (io_read_per_second, io_write_per_second)
             else:
                 print(f"Container {container_id} not found")
                 return 0, 0, 0, 0
