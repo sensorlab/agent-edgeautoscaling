@@ -1,5 +1,5 @@
 import re
-
+import yaml
 from kubernetes import client, config
 
 from node import Node
@@ -43,3 +43,8 @@ def increment_last_number(input_string):
         return result_string
     else:
         return input_string + '1'
+
+def load_config():
+    with open('code/application_config.yaml', 'r') as f:
+        config = yaml.safe_load(f)
+    return config

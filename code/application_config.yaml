@@ -1,0 +1,7 @@
+DEBUG: true
+custom_app_label: "app=nvg-api"
+scale_cpu: 1000
+max_cpu: 3750
+min_cpu: 500
+UPPER: 95.0
+LOWER: 10.0
