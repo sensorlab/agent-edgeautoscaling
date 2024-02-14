@@ -42,6 +42,11 @@ ip_addr hostname
 microk8s join IP_ADDRESS:25000/TOKEN
 ```
 
+### Label nodes
+```shell
+microk8s kubectl label nodes <your-node-name> foo=bar
+```
+
 # Safely shutdown
 
 drain nodes to evict all pods
