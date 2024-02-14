@@ -14,8 +14,9 @@ if __name__ == '__main__':
     min_cpu = config.get('min_cpu')
     UPPER = config.get('UPPER')
     LOWER = config.get('LOWER')
+    action_interval = config.get('action_interval')
 
-    print(f"DEBUG: {DEBUG}, custom_app_label: {custom_app_label}, scale_cpu: {scale_cpu}, max_cpu: {max_cpu}, CPU limits: upper: {UPPER}, lower: {LOWER}")
+    print(f"DEBUG: {DEBUG}, custom_app_label: {custom_app_label}, scale_cpu: {scale_cpu}, max_cpu: {max_cpu}, CPU limits: upper: {UPPER}, lower: {LOWER}, action_interval: {action_interval}")
 
     nodes = init_nodes(DEBUG, custom_label=custom_app_label)
 
@@ -27,6 +28,7 @@ if __name__ == '__main__':
     updated_container_ids = []
     created_pods = []
     while True:
+        start_time = time.time()
         for node in nodes:
             for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
                 cpu = random.randint(min_cpu, max_cpu)
@@ -52,4 +54,6 @@ if __name__ == '__main__':
                     # if created_pods:
                     #     delete_pod(created_pods.pop(), debug=DEBUG)
                 '''
-        time.sleep(5)
+        elapsed_time = time.time() - start_time
+        if elapsed_time < action_interval:
+            time.sleep(action_interval - elapsed_time)

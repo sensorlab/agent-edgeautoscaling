@@ -5,3 +5,4 @@ max_cpu: 3750
 min_cpu: 500
 UPPER: 95.0
 LOWER: 10.0
+action_interval: 2.5
