@@ -10,45 +10,7 @@ timeseries_data = []
 
 def write_to_csv(filename):
     with open(filename, mode='w', newline='') as file:
-        fieldnames = [
-            "timestamp",
-            "node_name",
-            "node_cpu_usage_mc",
-            "node_cpu_usage_percentage",
-            "node_memory_usage_mb",
-            "node_memory_usage_percentage",
-            "node_free_cpu_mc",
-            "node_free_memory_mb",
-            "node_unallocated_cpu_mc",
-            "node_unallocated_memory_mb",
-            "node_max_cpu_mc",
-            "node_max_memory_mb",
-            "node_cpu_minute_mean_mc",
-            "node_memory_minute_mean_mb",
-            "node_cpu_hour_mean_mc",
-            "node_memory_hour_mean_mb",
-            "node_cpu_day_mean_mc",
-            "node_memory_day_mean_mb",
-            "node_root_storage_usage_gb",
-            "node_root_storage_limit_gb",
-            "node_root_storage_available_gb",
-            "node_root_storage_percentage_usage_gb",
-            "pod_name",
-            "pod_cpu_usage_mc",
-            "pod_cpu_limit_mc",
-            "pod_cpu_usage_percentage",
-            "pod_mem_usage_cache_b",
-            "pod_mem_usage_rss_b",
-            "pod_mem_usage_swap_b",
-            "pod_mem_usage_mapped_file_b",
-            "pod_memory_limit_mb",
-            "pod_memory_usage_mb",
-            "pod_memory_usage_percentage",
-            "pod_io_read_usage",
-            "pod_io_write_usage",
-            "pod_network_rx_mb",
-            "pod_network_tx_mb"
-        ]
+        fieldnames = list(timeseries_data[0].keys())
         writer = csv.DictWriter(file, fieldnames=fieldnames)
 
         writer.writeheader()
@@ -60,11 +22,12 @@ if __name__ == '__main__':
     config = load_config()
     nodes = init_nodes(debug=config.get('DEBUG'), custom_label=config.get('custom_app_label'))
 
-    duration_seconds = 300
+    duration_seconds = 5 * 60
     sampling_interval = 5
     file_name = 'timeseries.csv'
     end_time = time.time() + duration_seconds
 
+    prev_pod_limits = dict()
     while time.time() < end_time:
         start_time = time.time()
         for node in nodes:
@@ -75,8 +38,9 @@ if __name__ == '__main__':
             (root_usage, root_limit, root_available, root_percentage) = node.get_root_storage()
 
             for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
-                (cpu_limit, cpu, cpu_p), (mem_limit, mem, mem_p), (io_read, io_write), (rx, tx), (mem_usage_cache_sec, mem_usage_rss_sec, mem_usage_swap_sec, mem_usage_mapped_file_sec, mem_usage_working_set_sec) = node.get_container_usage_saving_data(container_id)
+                (cpu_limit, cpu, cpu_p), (mem_limit, mem, mem_p), (io_read, io_write), (rx, tx), (mem_usage_cache, mem_usage_rss, mem_usage_swap, mem_usage_mapped_file, mem_usage_working_set) = node.get_container_usage_saving_data(container_id)
 
+                pod_delta = cpu_limit - prev_pod_limits[pod_name] if pod_name in prev_pod_limits else 0
                 timeseries_data.append({
                     "timestamp": datetime.datetime.now(),
                     "node_name": node.name,
@@ -107,15 +71,19 @@ if __name__ == '__main__':
                     "pod_memory_limit_mb": mem_limit / (1024 * 1024),
                     "pod_memory_usage_mb": mem,
                     "pod_memory_usage_percentage": mem_p,
-                    "pod_mem_usage_cache_b": mem_usage_cache_sec,
-                    "pod_mem_usage_rss_b": mem_usage_rss_sec,
-                    "pod_mem_usage_swap_b": mem_usage_swap_sec,
-                    "pod_mem_usage_mapped_file_b": mem_usage_mapped_file_sec,
+                    "pod_mem_usage_cache_mb": mem_usage_cache,
+                    "pod_mem_usage_rss_mb": mem_usage_rss,
+                    "pod_mem_usage_swap_mb": mem_usage_swap,
+                    "pod_mem_usage_mapped_file_mb": mem_usage_mapped_file,
+                    "pod_mem_working_set_mb": mem_usage_working_set,
                     "pod_io_read_usage": io_read,
                     "pod_io_write_usage": io_write,
                     "pod_network_rx_mb": rx,
                     "pod_network_tx_mb": tx,
+                    "pod_cpu_limit_delta_mc": pod_delta,
                 })
+                prev_pod_limits[pod_name] = cpu_limit
+
         elapsed_time = time.time() - start_time
         if elapsed_time < sampling_interval:
             time.sleep(sampling_interval - elapsed_time)

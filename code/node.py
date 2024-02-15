@@ -10,6 +10,7 @@ class Node:
         self.ip = ip
         self.ca_ip = ca_ip
         self.containers = dict()
+        self.last_pod_limits = dict()
 
     def update_containers(self, debug=False, custom_label='type=ray'):
         self.containers = dict()
@@ -127,11 +128,11 @@ class Node:
                 memory_usage_mapped_file_delta = memory_usage_mapped_file - previous_memory_usage_mapped_file
                 memory_usage_working_set_delta = memory_usage_working_set - previous_memory_usage_working_set
 
-                mem_usage_cache_sec = memory_usage_cache_delta / time_interval_seconds
-                mem_usage_rss_sec = memory_usage_rss_delta / time_interval_seconds
-                mem_usage_swap_sec = memory_usage_swap_delta / time_interval_seconds
-                mem_usage_mapped_file_sec = memory_usage_mapped_file_delta / time_interval_seconds
-                mem_usage_working_set_sec = memory_usage_working_set_delta / time_interval_seconds
+                mem_usage_cache = (memory_usage_cache_delta / time_interval_seconds) / (1024 * 1024)
+                mem_usage_rss = (memory_usage_rss_delta / time_interval_seconds) / (1024 * 1024)
+                mem_usage_swap = (memory_usage_swap_delta / time_interval_seconds) / (1024 * 1024)
+                mem_usage_mapped_file = (memory_usage_mapped_file_delta / time_interval_seconds) / (1024 * 1024)
+                mem_usage_working_set = (memory_usage_working_set_delta / time_interval_seconds) / (1024 * 1024)
 
                 io_read_curr = container["stats"][-1]["diskio"]["io_service_bytes"][0]['stats']['Read']
                 io_read_prev = container["stats"][-2]["diskio"]["io_service_bytes"][0]['stats']['Read']
@@ -145,7 +146,7 @@ class Node:
                 
                 network_rx_per_second_mb, network_tx_per_second_mb = self.get_throughput(time_interval_seconds)
 
-                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (memory_limit_bytes, memory_usage_megabytes, memory_usage_percentage), (io_read_per_second, io_write_per_second), (network_rx_per_second_mb, network_tx_per_second_mb), (mem_usage_cache_sec, mem_usage_rss_sec, mem_usage_swap_sec, mem_usage_mapped_file_sec, mem_usage_working_set_sec)
+                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (memory_limit_bytes, memory_usage_megabytes, memory_usage_percentage), (io_read_per_second, io_write_per_second), (network_rx_per_second_mb, network_tx_per_second_mb), (mem_usage_cache, mem_usage_rss, mem_usage_swap, mem_usage_mapped_file, mem_usage_working_set)
             else:
                 print(f"Container {container_id} not found")
                 return (0, 0, 0), (0, 0, 0), (0, 0), (0, 0)
