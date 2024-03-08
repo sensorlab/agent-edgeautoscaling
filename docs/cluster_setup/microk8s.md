@@ -1,7 +1,7 @@
 # Install
 
 ```shell
-sudo snap install microk8s --classic --channel=1.27
+sudo snap install microk8s --classic --channel=1.28
 ```
 
 ## InPlacePodVerticalScaling
@@ -32,7 +32,7 @@ microk8s.kubectl config view --raw > ~/.kube/config
 microk8s add-node
 ```
 
-worker nodes should be added into `/etc/hotsts` of master. Example:
+worker nodes should be added into `/etc/hosts` of master. Example:
 ```
 ip_addr hostname
 ```
