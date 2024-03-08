@@ -20,12 +20,11 @@ if __name__ == '__main__':
 
             print("Containers-------")
             for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
-                (_, container_cpu, container_cpu_percentage), (_, container_memory, container_memory_percentage), (io_read, io_write), (rx, tx) = node.get_container_usage(container_id)
+                (cpu_limit, cpu, cpu_percentage), (memory_limit, memory, memory_percentage), (rx, tx) = node.get_container_usage(container_id)
                 print(f"Usage for container {pod_name} at pod {container_name}:{pod_ip}")
-                print(f"CPU Usage : {container_cpu:.2f} mC, {container_cpu_percentage:.2f}%")
-                print(f"Memory Usage: {container_memory:.2f} MB, {container_memory_percentage:.2f}%")
-                print(f"IO Read: {io_read}, write: {io_write}")
-                print(f"Network RX: {rx} MB, TX: {tx} MB")
+                print(f"CPU Usage : {cpu:.2f} mC, {cpu_percentage:.2f}%, limit {cpu_limit} mC")
+                print(f"Memory Usage: {memory:.2f} MB, {memory_percentage:.2f}%, limit {memory_limit} MB")
+                print(f"RX: {rx} MB, TX: {tx} MB")
                 print('')
 
         time.sleep(1)

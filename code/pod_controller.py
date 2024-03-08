@@ -80,6 +80,18 @@ def create_worker_pod(node_name=None, debug=False):
         print(f"Error creating pod: {e}")
 
 
+def get_loadbalancer_external_port(service_name, namespace='default'):
+    try:
+        config.load_kube_config()
+        v1 = client.CoreV1Api()
+        service = v1.read_namespaced_service(service_name, namespace)
+        external_port = service.spec.ports[0].node_port
+        return external_port
+    except Exception as e:
+        print(f"Error retrieving load balancer external port: {e}")
+        return None
+
+
 def create_pod_from(source_pod_name, node_name=None, debug=False):
     if debug:
         config.load_kube_config()
@@ -166,13 +178,21 @@ def patch_pod(pod_name, cpu_request="1", cpu_limit="1", memory_request=None, mem
 if __name__ == '__main__':
     # patch_pod('ray-worker-pod', cpu_request="500m", cpu_limit="500m", memory_limit="2Gi", memory_request="1Gi")
     # patch_pod('ray-head-pod', cpu_request="1", cpu_limit="1500m")
-    # patch_pod('ray-worker-pod', cpu_request="500m", cpu_limit="500m")
+    patch_pod('localization-api1', cpu_request="500m", cpu_limit="500m", container_name='localization-api', debug=True)
+    # patch_pod('localization-api2', cpu_request="100m", cpu_limit="100m", container_name='localization-api', debug=True)
+    # patch_pod('localization-api3', cpu_request="500m", cpu_limit="500m", container_name='localization-api', debug=True)
     # patch_pod('ray-worker-pod1', cpu_request="2", cpu_limit="2")
     # patch_pod('ray-worker-pod', cpu_request="1", cpu_limit="1500m")
     # create_pod_from('ray-worker-pod', node_name='jovyan-thinkpad-l14-gen-1')
-    create_pod_from('ray-worker-pod', node_name='e6-orancloud')
+    # create_pod_from('ray-worker-pod', node_name='e6-orancloud')
+    # create_pod_from('localization-api1', node_name='raspberrypi2', debug=True)
+    # create_pod_from('localization-api1', node_name='raspberrypi2', debug=True)
+    # create_pod_from('localization-api2', node_name='raspberrypi1', debug=True)
+    # create_pod_from('localization-api3', node_name='raspberrypi2', debug=True)
     # create_worker_pod()
     # create_worker_pod()
     # create_worker_pod()
     # create_worker_pod('jovyan-thinkpad-l14-gen-1')
     # remove_worker_pods_except_first()
+    # delete_pod('localization-api3', debug=True)
+    # delete_pod('localization-api4', debug=True)

@@ -70,12 +70,29 @@ class Node:
                 memory_limit_bytes = container["spec"]["memory"]["limit"]
                 memory_usage_percentage = (current_memory_usage_bytes / memory_limit_bytes) * 100
 
-                # network_rx_per_second_mb, network_tx_per_second_mb = self.get_throughput(time_interval_seconds)
+                network_rx_per_second_mb, network_tx_per_second_mb = self.get_throughput(time_interval_seconds)
 
-                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (memory_limit_bytes, memory_usage_megabytes, memory_usage_percentage)
+                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (memory_limit_bytes / (1024 * 1024), memory_usage_megabytes, memory_usage_percentage), (network_rx_per_second_mb, network_tx_per_second_mb)
             else:
                 print(f"Container {container_id} not found")
                 return (0, 0, 0), (0, 0, 0), (0, 0), (0, 0)
+        else:
+            print("Failed to fetch containers stats")
+
+    def get_container_limits(self, container_id):
+        containers_stats_url = f"http://{self.ca_ip}:8080/api/v1.3/subcontainers/kubepods/"
+
+        response = requests.get(containers_stats_url)
+        if response.status_code == 200:
+            containers_stats = response.json()
+            container = next((c for c in containers_stats if container_id in c["name"]), None)
+            if container:
+                cpu_limit_mc = container["spec"]["cpu"]["limit"]
+                memory_limit_bytes = container["spec"]["memory"]["limit"]
+                return cpu_limit_mc, memory_limit_bytes
+            else:
+                print(f"Container {container_id} not found")
+                return 0, 0
         else:
             print("Failed to fetch containers stats")
 
@@ -159,13 +176,13 @@ class Node:
         if response.status_code == 200:
             containers_stats = response.json()
             # todo: fixme
-            current_network_rx_bytes = containers_stats["stats"][-1]["network"]["interfaces"][-2]["rx_bytes"]
-            previous_network_rx_bytes = containers_stats["stats"][-2]["network"]["interfaces"][-2]["rx_bytes"]
+            current_network_rx_bytes = containers_stats["stats"][-1]["network"]["interfaces"][-3]["rx_bytes"]
+            previous_network_rx_bytes = containers_stats["stats"][-2]["network"]["interfaces"][-3]["rx_bytes"]
             network_rx_delta = current_network_rx_bytes - previous_network_rx_bytes
             network_rx_per_second = network_rx_delta / time_interval
 
-            current_network_tx_bytes = containers_stats["stats"][-1]["network"]["interfaces"][-2]["tx_bytes"]
-            previous_network_tx_bytes = containers_stats["stats"][-2]["network"]["interfaces"][-2]["tx_bytes"]
+            current_network_tx_bytes = containers_stats["stats"][-1]["network"]["interfaces"][-3]["tx_bytes"]
+            previous_network_tx_bytes = containers_stats["stats"][-2]["network"]["interfaces"][-3]["tx_bytes"]
             network_tx_delta = current_network_tx_bytes - previous_network_tx_bytes
             network_tx_per_second = network_tx_delta / time_interval
 
