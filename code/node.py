@@ -176,15 +176,21 @@ class Node:
         if response.status_code == 200:
             containers_stats = response.json()
             # todo: fixme
-            current_network_rx_bytes = containers_stats["stats"][-1]["network"]["interfaces"][-3]["rx_bytes"]
-            previous_network_rx_bytes = containers_stats["stats"][-2]["network"]["interfaces"][-3]["rx_bytes"]
+            current_network_rx_bytes = containers_stats["stats"][-1]["network"]["interfaces"][-1]["rx_bytes"]
+            previous_network_rx_bytes = containers_stats["stats"][-2]["network"]["interfaces"][-1]["rx_bytes"]
             network_rx_delta = current_network_rx_bytes - previous_network_rx_bytes
             network_rx_per_second = network_rx_delta / time_interval
 
-            current_network_tx_bytes = containers_stats["stats"][-1]["network"]["interfaces"][-3]["tx_bytes"]
-            previous_network_tx_bytes = containers_stats["stats"][-2]["network"]["interfaces"][-3]["tx_bytes"]
+            current_network_tx_bytes = containers_stats["stats"][-1]["network"]["interfaces"][-1]["tx_bytes"]
+            previous_network_tx_bytes = containers_stats["stats"][-2]["network"]["interfaces"][-1]["tx_bytes"]
             network_tx_delta = current_network_tx_bytes - previous_network_tx_bytes
             network_tx_per_second = network_tx_delta / time_interval
+
+            # current_network_rx_packets = containers_stats["stats"][-1]["network"]["interfaces"][-1]["rx_packets"]
+            # previous_network_rx_packets = containers_stats["stats"][-2]["network"]["interfaces"][-1]["rx_packets"]
+            # network_rx_packets_delta = current_network_rx_packets - previous_network_rx_packets
+            # packets_per_second = network_rx_packets_delta / time_interval
+            # print(f"Packets per second: {packets_per_second}")
 
             return (network_rx_per_second / (1024 * 1024)), (network_tx_per_second / (1024 * 1024))
 

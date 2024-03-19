@@ -1,5 +1,8 @@
 import re
 import yaml
+import time
+import requests
+import json
 from kubernetes import client, config
 
 from node import Node
@@ -33,6 +36,19 @@ def init_nodes(debug=False, custom_label='type=ray'):
 
     return nodes
 
+def make_request(url, data):
+    headers = {'Content-Type': 'application/json'}
+    start_time = time.time()
+    response = requests.post(url, data=json.dumps(data), headers=headers, timeout=5) # 5 seconds timeout
+    end_time = time.time()
+    latency = end_time - start_time
+    # print(f"Request latency: {latency} seconds")
+    if response.status_code != 200:
+        print(f"Error making prediction: {response.text}")
+        return None
+    # print(response.json())
+    return latency
+
 def increment_last_number(input_string):
     match = re.search(r'(\d+)$', input_string)
 
@@ -45,6 +61,6 @@ def increment_last_number(input_string):
         return input_string + '1'
 
 def load_config():
-    with open('code/application_config.yaml', 'r') as f:
+    with open('application_config.yaml', 'r') as f:
         config = yaml.safe_load(f)
     return config
