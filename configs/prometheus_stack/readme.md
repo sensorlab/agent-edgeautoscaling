@@ -13,6 +13,7 @@ helm install [NAME] prometheus-community/kube-prometheus-stack --namespace [NAME
 helm upgrade [NAME] prometheus-community/kube-prometheus-stack -f values.yaml
 ```
 
+# Example usage for scraping cAdvisor metrics
 ```bash
 microk8s helm upgrade stack prometheus-community/kube-prometheus-stack -f values.yaml -n metrics
 ```
