@@ -21,7 +21,8 @@ class ElastisityEnv(Env):
         self.id = id
         for node in nodes:
             for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
-                if pod_name == f'localization-api{id}':
+                if pod_name == f'localization-api{self.id}':
+                    # select node and container_id for agent
                     self.container_id = container_id
                     self.node = node
                     break
@@ -29,12 +30,14 @@ class ElastisityEnv(Env):
         # self.which_node = 1
         # self.node = next((node for node in nodes if node.name == 'raspberrypi' + str(self.which_node)), None
         self.STATE_LENTGH = 8
-        self.states_fifo = [[0, 0, 0] for _ in range(self.STATE_LENTGH)]
+        # init state with random values
+        self.states_fifo = [[random.random(), random.random(), random.random()] for _ in range(self.STATE_LENTGH)]
         self.state = self.get_current_usage()
 
         self.steps = 0
         self.MAX_STEPS = 50
 
+        # 30% - 60%
         self.UPPER_CPU = 60
         self.LOWER_CPU = 30
 
@@ -46,7 +49,6 @@ class ElastisityEnv(Env):
         elif action == 2:
             self.increase_resources()
 
-        # time.sleep(1) # waiting for metrics update
         self.state = self.get_current_usage()
 
         # latency = self.calculate_latency(1)

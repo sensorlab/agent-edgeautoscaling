@@ -16,6 +16,26 @@ def delete_pod(pod_name, debug=True):
         print(f"Error deleting pod {pod_name}: {e}")
 
 
+def delete_pods_by_label(label_selector, debug=False):
+    if debug:
+        config.load_kube_config()
+    else:
+        config.load_incluster_config()
+    v1 = client.CoreV1Api()
+    namespace = 'default'
+    try:
+        pods = v1.list_namespaced_pod(namespace=namespace, label_selector=label_selector)
+    except Exception as e:
+        print(f"Error reading pods: {e}")
+        return
+    for pod in pods.items:
+        try:
+            v1.delete_namespaced_pod(name=pod.metadata.name, namespace=namespace)
+            print(f"Deleted pod: {pod.metadata.name}")
+        except Exception as e:
+            print(f"Error deleting pod {pod.metadata.name}: {e}")
+
+
 # wip
 def remove_worker_pods_except_first(debug=False):
     if debug:
@@ -170,7 +190,7 @@ def patch_pod(pod_name, cpu_request="1", cpu_limit="1", memory_request=None, mem
             namespace="default",
             body=patch,
         )
-        print(f"Pod {pod_name} patched successfully to {cpu_request} request and {cpu_limit} limit")
+        # print(f"Pod {pod_name} patched successfully to {cpu_request} request and {cpu_limit} limit")
     except Exception as e:
         print(f"Error: {e}")
 
@@ -178,16 +198,15 @@ def patch_pod(pod_name, cpu_request="1", cpu_limit="1", memory_request=None, mem
 if __name__ == '__main__':
     # patch_pod('ray-worker-pod', cpu_request="500m", cpu_limit="500m", memory_limit="2Gi", memory_request="1Gi")
     # patch_pod('ray-head-pod', cpu_request="1", cpu_limit="1500m")
-    patch_pod('localization-api1', cpu_request="500m", cpu_limit="500m", container_name='localization-api', debug=True)
+    # patch_pod('localization-api1', cpu_request="500m", cpu_limit="500m", container_name='localization-api', debug=True)
     # patch_pod('localization-api2', cpu_request="100m", cpu_limit="100m", container_name='localization-api', debug=True)
     # patch_pod('localization-api3', cpu_request="500m", cpu_limit="500m", container_name='localization-api', debug=True)
     # patch_pod('ray-worker-pod1', cpu_request="2", cpu_limit="2")
     # patch_pod('ray-worker-pod', cpu_request="1", cpu_limit="1500m")
     # create_pod_from('ray-worker-pod', node_name='jovyan-thinkpad-l14-gen-1')
     # create_pod_from('ray-worker-pod', node_name='e6-orancloud')
-    # create_pod_from('localization-api1', node_name='raspberrypi2', debug=True)
-    # create_pod_from('localization-api1', node_name='raspberrypi2', debug=True)
-    # create_pod_from('localization-api2', node_name='raspberrypi1', debug=True)
+    create_pod_from('localization-api1', node_name='raspberrypi2', debug=True)
+    create_pod_from('localization-api2', node_name='raspberrypi1', debug=True)
     # create_pod_from('localization-api3', node_name='raspberrypi2', debug=True)
     # create_worker_pod()
     # create_worker_pod()
@@ -196,3 +215,4 @@ if __name__ == '__main__':
     # remove_worker_pods_except_first()
     # delete_pod('localization-api3', debug=True)
     # delete_pod('localization-api4', debug=True)
+    # delete_pods_by_label('app=localization-api', debug=True)

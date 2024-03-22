@@ -9,11 +9,20 @@ helm install [NAME] prometheus-community/kube-prometheus-stack --namespace [NAME
 
 # Change configuration values
 
-```bash
+```shell
 helm upgrade [NAME] prometheus-community/kube-prometheus-stack -f values.yaml
 ```
 
-# Example usage for scraping cAdvisor metrics
-```bash
+# Example usage
+
+```shell
+microk8s helm install stack prometheus-community/kube-prometheus-stack --namespace metrics
+```
+
+```shell
 microk8s helm upgrade stack prometheus-community/kube-prometheus-stack -f values.yaml -n metrics
+```
+
+```shell
+microk8s helm upgrade stack prometheus-community/kube-prometheus-stack -f embeddings_values.yaml -n metrics
 ```
