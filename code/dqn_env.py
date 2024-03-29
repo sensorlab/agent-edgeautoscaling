@@ -21,24 +21,16 @@ class ElastisityEnv(Env):
         self.id = id
         for node in nodes:
             for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
-                if pod_name == f'localization-api{self.id}':
-                    # select node and container_id for agent
+                if pod_name == f'localization-api{id}':
                     self.container_id = container_id
                     self.node = node
                     break
 
-        # self.which_node = 1
-        # self.node = next((node for node in nodes if node.name == 'raspberrypi' + str(self.which_node)), None
-        self.STATE_LENTGH = 8
-        # init state with random values
-        # self.states_fifo = [[random.random(), random.random(), random.random()] for _ in range(self.STATE_LENTGH)]
-        self.states_fifo = [[0, 0, 0] for _ in range(self.STATE_LENTGH)]
         self.state = self.get_current_usage()
 
         self.steps = 0
         self.MAX_STEPS = 50
 
-        # 30% - 60%
         self.UPPER_CPU = 60
         self.LOWER_CPU = 30
 
@@ -50,6 +42,7 @@ class ElastisityEnv(Env):
         elif action == 2:
             self.increase_resources()
 
+        # time.sleep(1) # waiting for metrics update
         self.state = self.get_current_usage()
 
         # latency = self.calculate_latency(1)
@@ -57,9 +50,9 @@ class ElastisityEnv(Env):
         # reward = 1 - latency * 10
 
         if self.last_cpu_percentage < self.LOWER_CPU:
-            usage_penalty = 2 - self.state[-1][2]
+            usage_penalty = 2 - self.state[2]
         elif self.last_cpu_percentage > self.UPPER_CPU:
-            usage_penalty = self.state[-1][2]
+            usage_penalty = self.state[2]
         else:
             usage_penalty = 0
 
@@ -68,11 +61,7 @@ class ElastisityEnv(Env):
         # print(f"Steps {self.steps} Reward: {reward}, State {self.state}")
 
         self.steps += 1
-        if self.steps >= self.MAX_STEPS:
-            print(f"Max steps reached")
-            done = True
-        else:
-            done = False
+        done = self.steps >= self.MAX_STEPS
 
         return self.state, reward, done, 0
     
@@ -83,8 +72,7 @@ class ElastisityEnv(Env):
         return self.state
 
     def normalize_cpu_usage(self, cpu_usage):
-        # normalized_cpu_usage = (cpu_usage - 0) / (self.MAX_CPU_LIMIT - 0)
-        normalized_cpu_usage = (cpu_usage - self.MIN_CPU_LIMIT) / (self.MAX_CPU_LIMIT - self.MIN_CPU_LIMIT)
+        normalized_cpu_usage = (cpu_usage - 0) / (self.MAX_CPU_LIMIT - 0)
         return normalized_cpu_usage
 
     def get_current_usage(self):
@@ -96,11 +84,7 @@ class ElastisityEnv(Env):
         n_cpu_limit, n_cpu = self.normalize_cpu_usage(cpu_limit), self.normalize_cpu_usage(cpu)
             
         state = [n_cpu_limit, n_cpu, (cpu_percentage / 100)]
-        
-        self.states_fifo.append(state)
-        self.states_fifo.pop(0)
-
-        return self.states_fifo
+        return state
 
     def increase_resources(self):
         # for node in self.nodes:
@@ -126,8 +110,6 @@ class ElastisityEnv(Env):
                 "feature": random.randint(0, 130)
             }
             latency = make_request(url, data)
-            if latency:
-                latencies.append(latency)
+            latencies.append(latency)
         a = np.array(latencies)
-        # return a.prod()**(1.0/len(a))
-        return a.mean() if len(a) > 0 else 0
+        return a.prod()**(1.0/len(a))

@@ -127,17 +127,20 @@ if __name__ == '__main__':
     BATCH_SIZE = 128
     GAMMA = 0.99
     EPS_START = 0.9
-    EPS_END = 0.25
-    EPS_DECAY = 2000
+    # EPS_END = 0.25
+    EPS_END = 0.15
+    EPS_DECAY = 3000
     TAU = 0.005
     LR = 1e-4
 
-    LOAD_WEIGHTS = False
-    SAVE_WEIGHTS = True
+    # MEMORY_SIZE = 1000
+    MEMORY_SIZE = 500
 
-    # shared reward
+    LOAD_WEIGHTS = False
+    SAVE_WEIGHTS = False
+
+    # shared reward weight
     alpha = 0.7
-    beta = 0.3
 
     n_agents = 3
     envs = [ElastisityEnv(i) for i in range(1, n_agents + 1)]
@@ -151,11 +154,11 @@ if __name__ == '__main__':
     agents = [DQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
     if LOAD_WEIGHTS:
         for i, agent in enumerate(agents):
-            agent.load_state_dict(torch.load(f'models/mdqn/model_weights_agent_{i}.pth'))
+            agent.load_state_dict(torch.load(f'code/model_metric_data/mdqn300ep500m/model_weights_agent_{i}.pth'))
         print(f"Loaded weights for agents")
 
     target_nets = [DQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
-    memories = [ReplayMemory(1000) for _ in range(n_agents)]
+    memories = [ReplayMemory(MEMORY_SIZE) for _ in range(n_agents)]
     optimizers = [optim.AdamW(agent.parameters(), lr=LR, amsgrad=True) for agent in agents]
 
     for target_net, agent in zip(target_nets, agents):
@@ -167,15 +170,15 @@ if __name__ == '__main__':
     agent_ep_summed_rewards = [[] for _ in range(n_agents)]
 
     # load the cluster
-    spam_process = subprocess.Popen(['python', 'spam_cluster.py', '--users', '400'])
+    spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', '400'])
 
-    num_episodes = 200
+    num_episodes = 300
 
     for i_episode in tqdm(range(num_episodes)):
         # save weights every 5 episodes
-        if i_episode % 5 == 0:
+        if i_episode % 5 == 0 and SAVE_WEIGHTS:
             for i, agent in enumerate(agents):
-                torch.save(agent.state_dict(), f'models/mdqn/model_weights_agent_{i}.pth')
+                torch.save(agent.state_dict(), f'code/model_metric_data/mdqn300ep500m/model_weights_agent_{i}.pth')
                 print(f"Checkpoint: Saved weights for agent {i}")
 
         states = [env.reset() for env in envs]
@@ -207,7 +210,8 @@ if __name__ == '__main__':
             # calculate mean/geomean latency for the system, it doesnt matter which agent we use
             latency = envs[0].calculate_latency(30)
             step_latencies.append(envs[0].calculate_latency(1)) # without geo. mean
-            shared_rewards = [alpha * reward + beta * (1 - latency * 100) for reward in rewards]
+            # shared_rewards = [alpha * reward + beta * (1 - latency * 100) for reward in rewards]
+            shared_rewards = [alpha * reward + (1 - alpha) * (1 - latency * 100) for reward in rewards]
 
             if t % 25 == 0:
                 print(f"SharedR A*r+B*L: {shared_rewards}, reward_part: {rewards}, latency_part: {latency}. Step: {t}")
@@ -251,16 +255,16 @@ if __name__ == '__main__':
 
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):
-            torch.save(agent.state_dict(), f'models/mdqn/model_weights_agent_{i}.pth')
+            torch.save(agent.state_dict(), f'code/model_metric_data/mdqn300ep500m/model_weights_agent_{i}.pth')
     
         # save collected data for later analysis
         ep_summed_rewards_df = pd.DataFrame({'Episode': range(len(ep_summed_rewards)), 'Reward': ep_summed_rewards})
-        ep_summed_rewards_df.to_csv('model_metric_data/ep_summed_rewards.csv', index=False)
+        ep_summed_rewards_df.to_csv('code/model_metric_data/ep_summed_rewards.csv', index=False)
 
         ep_latencies_df = pd.DataFrame({'Episode': range(len(ep_latencies)), 'Mean Latency': ep_latencies})
-        ep_latencies_df.to_csv('model_metric_data/ep_latencies.csv', index=False)
+        ep_latencies_df.to_csv('code/model_metric_data/ep_latencies.csv', index=False)
 
         for agent_idx, rewards in enumerate(agent_ep_summed_rewards):
-            filename = f'model_metric_data/agent_{agent_idx}_ep_summed_rewards.csv'
+            filename = f'code/model_metric_data/agent_{agent_idx}_ep_summed_rewards.csv'
             agent_rewards_df = pd.DataFrame({'Episode': range(len(rewards)), 'Reward': rewards})
             agent_rewards_df.to_csv(filename, index=False)

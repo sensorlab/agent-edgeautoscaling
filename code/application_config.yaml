@@ -1,8 +1,8 @@
 DEBUG: true
-custom_app_label: "app=nvg-api"
-scale_cpu: 500
-max_cpu: 3750
-min_cpu: 500
-UPPER: 95.0
-LOWER: 10.0
+custom_app_label: "app=localization-api"
+scale_cpu: 50
+max_cpu: 1000
+min_cpu: 50
+UPPER: 60
+LOWER: 30
 action_interval: 5

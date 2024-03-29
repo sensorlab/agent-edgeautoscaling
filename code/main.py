@@ -31,18 +31,17 @@ if __name__ == '__main__':
         start_time = time.time()
         for node in nodes:
             for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
-                if pod_name not in node.last_pod_limits.keys():
-                    cpu = random.randint(min_cpu, max_cpu)
-                    node.last_pod_limits[pod_name] = cpu
-                else:
-                    prev_cpu = node.last_pod_limits[pod_name]
-                    cpu = prev_cpu + random.choice([-1, 1]) * random.randint(10, scale_cpu)
-                    cpu = max(min_cpu, min(cpu, max_cpu))
-                    node.last_pod_limits[pod_name] = cpu
+                # if pod_name not in node.last_pod_limits.keys():
+                #     cpu = random.randint(min_cpu, max_cpu)
+                #     node.last_pod_limits[pod_name] = cpu
+                # else:
+                #     prev_cpu = node.last_pod_limits[pod_name]
+                #     cpu = prev_cpu + random.choice([-1, 1]) * random.randint(10, scale_cpu)
+                #     cpu = max(min_cpu, min(cpu, max_cpu))
+                #     node.last_pod_limits[pod_name] = cpu
 
-                patch_pod(pod_name, cpu_request=f"{cpu}m", cpu_limit=f"{cpu}m", container_name=container_name, debug=DEBUG)
-                '''
-                (cpu_limit, cpu, cpu_p), (_, _, _), (_, _), (_, _) = node.get_container_usage(container_id)
+                # patch_pod(pod_name, cpu_request=f"{cpu}m", cpu_limit=f"{cpu}m", container_name=container_name, debug=DEBUG)
+                (cpu_limit, cpu, cpu_p), (_, _, _), (_, _) = node.get_container_usage(container_id)
                 
                 if cpu_p > UPPER:
                     cpu_limit = min(max_cpu, int(cpu_limit) + scale_cpu)
@@ -61,7 +60,6 @@ if __name__ == '__main__':
                         updated_container_ids.remove(container_id)
                     # if created_pods:
                     #     delete_pod(created_pods.pop(), debug=DEBUG)
-                '''
         elapsed_time = time.time() - start_time
         if elapsed_time < action_interval:
             time.sleep(action_interval - elapsed_time)
