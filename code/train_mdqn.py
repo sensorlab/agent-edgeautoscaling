@@ -3,6 +3,7 @@ import random
 import time
 import numpy as np
 import subprocess
+import os
 
 from tqdm import tqdm
 from collections import namedtuple, deque
@@ -135,9 +136,13 @@ if __name__ == '__main__':
 
     # MEMORY_SIZE = 1000
     MEMORY_SIZE = 500
+    EPISODES = 400
+
+    MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m'
+    os.makedirs(f'code/model_metric_data/{MODEL}', exist_ok=True)
 
     LOAD_WEIGHTS = False
-    SAVE_WEIGHTS = False
+    SAVE_WEIGHTS = True
 
     # shared reward weight
     alpha = 0.7
@@ -154,7 +159,7 @@ if __name__ == '__main__':
     agents = [DQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
     if LOAD_WEIGHTS:
         for i, agent in enumerate(agents):
-            agent.load_state_dict(torch.load(f'code/model_metric_data/mdqn300ep500m/model_weights_agent_{i}.pth'))
+            agent.load_state_dict(torch.load(f'code/model_metric_data/{MODEL}/model_weights_agent_{i}.pth'))
         print(f"Loaded weights for agents")
 
     target_nets = [DQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
@@ -172,13 +177,11 @@ if __name__ == '__main__':
     # load the cluster
     spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', '400'])
 
-    num_episodes = 300
-
-    for i_episode in tqdm(range(num_episodes)):
+    for i_episode in tqdm(range(EPISODES)):
         # save weights every 5 episodes
         if i_episode % 5 == 0 and SAVE_WEIGHTS:
             for i, agent in enumerate(agents):
-                torch.save(agent.state_dict(), f'code/model_metric_data/mdqn300ep500m/model_weights_agent_{i}.pth')
+                torch.save(agent.state_dict(), f'code/model_metric_data/{MODEL}/model_weights_agent_{i}.pth')
                 print(f"Checkpoint: Saved weights for agent {i}")
 
         states = [env.reset() for env in envs]
@@ -255,16 +258,16 @@ if __name__ == '__main__':
 
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):
-            torch.save(agent.state_dict(), f'code/model_metric_data/mdqn300ep500m/model_weights_agent_{i}.pth')
+            torch.save(agent.state_dict(), f'code/model_metric_data/{MODEL}/model_weights_agent_{i}.pth')
     
         # save collected data for later analysis
         ep_summed_rewards_df = pd.DataFrame({'Episode': range(len(ep_summed_rewards)), 'Reward': ep_summed_rewards})
-        ep_summed_rewards_df.to_csv('code/model_metric_data/ep_summed_rewards.csv', index=False)
+        ep_summed_rewards_df.to_csv(f'code/model_metric_data/{MODEL}/ep_summed_rewards.csv', index=False)
 
         ep_latencies_df = pd.DataFrame({'Episode': range(len(ep_latencies)), 'Mean Latency': ep_latencies})
-        ep_latencies_df.to_csv('code/model_metric_data/ep_latencies.csv', index=False)
+        ep_latencies_df.to_csv(f'code/model_metric_data/{MODEL}/ep_latencies.csv', index=False)
 
         for agent_idx, rewards in enumerate(agent_ep_summed_rewards):
-            filename = f'code/model_metric_data/agent_{agent_idx}_ep_summed_rewards.csv'
+            filename = f'code/model_metric_data/{MODEL}/agent_{agent_idx}_ep_summed_rewards.csv'
             agent_rewards_df = pd.DataFrame({'Episode': range(len(rewards)), 'Reward': rewards})
             agent_rewards_df.to_csv(filename, index=False)

@@ -61,6 +61,6 @@ def increment_last_number(input_string):
         return input_string + '1'
 
 def load_config():
-    with open('application_config.yaml', 'r') as f:
+    with open('code/application_config.yaml', 'r') as f:
         config = yaml.safe_load(f)
     return config

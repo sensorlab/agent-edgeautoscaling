@@ -116,6 +116,12 @@ if __name__ == '__main__':
     TAU = 0.005
     LR = 1e-4
 
+    EPISODES = 400
+    MEMORY_SIZE = 500
+
+    MODEL = f'cdqn{EPISODES}ep{MEMORY_SIZE}m'
+    os.makedirs(f'code/model_metric_data/{MODEL}', exist_ok=True)
+
     LOAD_WEIGHTS = False
     SAVE_WEIGHTS = True
 
@@ -129,8 +135,8 @@ if __name__ == '__main__':
 
     policy_net = DQN(n_observations, n_agents, n_actions_per_agent).to(device)
 
-    if os.path.isfile('model_metric_data/model_weights.pth') and LOAD_WEIGHTS:
-        policy_net.load_state_dict(torch.load('model_metric_data/model_weights.pth'))
+    if os.path.isfile('code/model_metric_data/{MODEL}/model_weights.pth') and LOAD_WEIGHTS:
+        policy_net.load_state_dict(torch.load('code/model_metric_data/{MODEL}/model_weights.pth'))
     else:
         print("No weight file found, starting training from scratch.")
 
@@ -138,17 +144,16 @@ if __name__ == '__main__':
     target_net.load_state_dict(policy_net.state_dict())
 
     optimizer = optim.AdamW(policy_net.parameters(), lr=LR, amsgrad=True)
-    memory = ReplayMemory(500)
+    memory = ReplayMemory(MEMORY_SIZE)
 
     steps_done = 0
     summed_rewards = []
     latencies = []
 
-    spam_process = subprocess.Popen(['python', 'spam_cluster.py', '--users', '400'])
+    spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', '400'])
 
-    num_episodes = 300
 
-    for i_episode in tqdm(range(num_episodes)):
+    for i_episode in tqdm(range(EPISODES)):
         # Initialize the environment and get its state
         state = env.reset()
         state = torch.tensor(np.array(state).flatten(), dtype=torch.float32, device=device).unsqueeze(0)
@@ -195,11 +200,11 @@ if __name__ == '__main__':
     spam_process.terminate()
 
     if SAVE_WEIGHTS:
-        torch.save(policy_net.state_dict(),  f'model_metric_data/cdqn/model_weights.pth')
+        torch.save(policy_net.state_dict(),  f'code/model_metric_data/{MODEL}/model_weights.pth')
 
         # save collected data for later analysis
         ep_summed_rewards_df = pd.DataFrame({'Episode': range(len(summed_rewards)), 'Reward': summed_rewards})
-        ep_summed_rewards_df.to_csv('model_metric_data/cdqn/ep_summed_rewards.csv', index=False)
+        ep_summed_rewards_df.to_csv(f'code/model_metric_data/{MODEL}/ep_summed_rewards.csv', index=False)
 
         ep_latencies_df = pd.DataFrame({'Episode': range(len(latencies)), 'Mean Latency': latencies})
-        ep_latencies_df.to_csv('model_metric_data/cdqn/ep_latencies.csv', index=False)
+        ep_latencies_df.to_csv(f'code/model_metric_data/{MODEL}/ep_latencies.csv', index=False)
