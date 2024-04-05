@@ -39,12 +39,16 @@ def init_nodes(debug=False, custom_label='type=ray'):
 def make_request(url, data):
     headers = {'Content-Type': 'application/json'}
     start_time = time.time()
-    response = requests.post(url, data=json.dumps(data), headers=headers, timeout=5) # 5 seconds timeout
+    response = None
+    try:
+        response = requests.post(url, data=json.dumps(data), headers=headers, timeout=5) # 5 seconds timeout
+    except Exception as e:
+        pass
     end_time = time.time()
     latency = end_time - start_time
     # print(f"Request latency: {latency} seconds")
-    if response.status_code != 200:
-        print(f"Error making prediction: {response.text}")
+    if response is not None and response.status_code != 200:
+        # print(f"Error making prediction: {response.text}")
         return None
     # print(response.json())
     return latency
