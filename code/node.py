@@ -61,7 +61,8 @@ class Node:
                 cpu_usage_per_second = cpu_usage_delta_nanoseconds / time_interval_seconds
 
                 cpu_usage_millicores = cpu_usage_per_second / 1000000
-                cpu_limit_mc = container["spec"]["cpu"]["limit"]
+                # cpu_limit_mc = container["spec"]["cpu"]["limit"]
+                cpu_limit_mc = container["spec"]["cpu"]["quota"] / 100
                 cpu_usage_percentage = (cpu_usage_per_second / (cpu_limit_mc * 1_000_000)) * 100
 
                 current_memory_usage_bytes = container["stats"][-1]["memory"]["usage"]
@@ -87,7 +88,8 @@ class Node:
             containers_stats = response.json()
             container = next((c for c in containers_stats if container_id in c["name"]), None)
             if container:
-                cpu_limit_mc = container["spec"]["cpu"]["limit"]
+                # cpu_limit_mc = container["spec"]["cpu"]["limit"]
+                cpu_limit_mc = container["spec"]["cpu"]["quota"] / 100
                 memory_limit_bytes = container["spec"]["memory"]["limit"]
                 return cpu_limit_mc, memory_limit_bytes
             else:
