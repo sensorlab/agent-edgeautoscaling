@@ -18,6 +18,8 @@ import torch.nn.functional as F
 from env import ElastisityEnv
 import pandas as pd
 
+from spam_cluster import spam_requests_single
+from pod_controller import get_loadbalancer_external_port
 
 class ReplayMemory(object):
 
@@ -130,29 +132,47 @@ if __name__ == '__main__':
     EPS_START = 0.9
     # EPS_END = 0.25
     EPS_END = 0.15
-    EPS_DECAY = 3000
+    EPS_DECAY = 5000
     TAU = 0.005
     LR = 1e-4
 
     # MEMORY_SIZE = 1000
     MEMORY_SIZE = 500
-    EPISODES = 400
-
-    MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m'
-    os.makedirs(f'code/model_metric_data/{MODEL}', exist_ok=True)
+    EPISODES = 500
 
     LOAD_WEIGHTS = False
     SAVE_WEIGHTS = True
 
+    INITIAL_RESOURCES = 250
+    INCREMENT_ACTION = 10
+    USERS = 5
+
+    MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{INITIAL_RESOURCES}mcmax'
+    os.makedirs(f'code/model_metric_data/{MODEL}', exist_ok=True)
+
+    from pod_controller import set_initial_values
+    set_initial_values()
+
     # shared reward weight
-    alpha = 0.7
+    alpha = 0.5
 
     n_agents = 3
     envs = [ElastisityEnv(i) for i in range(1, n_agents + 1)]
+    for env in envs:
+        env.MAX_CPU_LIMIT = INITIAL_RESOURCES
+        env.INCREMENT = INCREMENT_ACTION
+
     # Get number of actions from gym action space
     n_actions = envs[0].action_space.n
     # Get the number of state observations
     state = envs[0].reset()
+
+    max_group = INITIAL_RESOURCES
+    for env in envs:
+        max_group -= env.ALLOCATED
+    for env in envs:
+        env.AVAILABLE = max_group
+
     n_observations = len(state) * len(state[0])
     print(f"Number of observations: {n_observations} and number of actions: {n_actions}")
 
@@ -174,8 +194,9 @@ if __name__ == '__main__':
     ep_latencies = []
     agent_ep_summed_rewards = [[] for _ in range(n_agents)]
 
-    # load the cluster
-    spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', '400'])
+    # load the cluster (values fro mthe demo)
+    spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', '245', '--interval', '500'])
+    url_spam = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}/predict"
 
     for i_episode in tqdm(range(EPISODES)):
         # save weights every 5 episodes
@@ -192,6 +213,7 @@ if __name__ == '__main__':
         agents_step_reward = [[] for _ in range(n_agents)]
         for t in count():
             time.sleep(1)
+            latencies = spam_requests_single(USERS, url_spam)
 
             actions = [select_action(state, agent, env) for state, agent, env in zip(states, agents, envs)]
 
@@ -205,16 +227,28 @@ if __name__ == '__main__':
                 if done:
                     next_states[i] = None
 
+            max_group = INITIAL_RESOURCES
+            for env in envs:
+                max_group -= env.ALLOCATED
+            for env in envs:
+                env.AVAILABLE = max_group            
+
             # latencies = [env.calculate_latency() for env in envs]
             # latenices_for_agent.append(latencies[0])
             # print(latencies)
             # shared_rewards = [alpha * reward + beta * (1 - np.mean(latencies) * 10) for reward in rewards]
             
             # calculate mean/geomean latency for the system, it doesnt matter which agent we use
-            latency = envs[0].calculate_latency(30)
-            step_latencies.append(envs[0].calculate_latency(1)) # without geo. mean
-            # shared_rewards = [alpha * reward + beta * (1 - latency * 100) for reward in rewards]
-            shared_rewards = [alpha * reward + (1 - alpha) * (1 - latency * 100) for reward in rewards]
+            # latency = envs[0].calculate_latency(5)
+            latencies = [latency for latency in latencies if latency is not None]
+            if latencies:
+                latency = np.mean(latencies)
+            else:
+                latency = 99
+                print('very bad latency')
+            # step_latencies.append(envs[0].calculate_latency(1)) # without geo. mean
+            step_latencies.append(latency)
+            shared_rewards = [alpha * reward + (1 - alpha) * (1 - latency * 10) for reward in rewards]
 
             if t % 25 == 0:
                 print(f"SharedR A*r+B*L: {shared_rewards}, reward_part: {rewards}, latency_part: {latency}. Step: {t}")

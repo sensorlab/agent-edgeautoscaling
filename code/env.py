@@ -15,6 +15,9 @@ class ElastisityEnv(Env):
         self.INCREMENT = 50
         # self.START_CPU = 100
 
+        self.ALLOCATED = 50
+        self.AVAILABLE = 1000
+
         self.action_space = spaces.Discrete(3)
         nodes = init_nodes(debug=True, custom_label='app=localization-api')
 
@@ -29,10 +32,10 @@ class ElastisityEnv(Env):
 
         # self.which_node = 1
         # self.node = next((node for node in nodes if node.name == 'raspberrypi' + str(self.which_node)), None
-        self.STATE_LENTGH = 8
+        self.STATE_LENTGH = 6
         # init state with random values
         # self.states_fifo = [[random.random(), random.random(), random.random()] for _ in range(self.STATE_LENTGH)]
-        self.states_fifo = [[0, 0, 0] for _ in range(self.STATE_LENTGH)]
+        self.states_fifo = [[0, 0, 0, 0, 0] for _ in range(self.STATE_LENTGH)]
         self.state = self.get_current_usage()
 
         self.steps = 0
@@ -66,10 +69,11 @@ class ElastisityEnv(Env):
         reward = - usage_penalty
 
         # print(f"Steps {self.steps} Reward: {reward}, State {self.state}")
+        # print(f"agent: {self.id}, action: {action}")
 
         self.steps += 1
         if self.steps >= self.MAX_STEPS:
-            print(f"Max steps reached")
+            # print(f"Max steps reached")
             done = True
         else:
             done = False
@@ -79,6 +83,11 @@ class ElastisityEnv(Env):
     def reset(self):
         self.state = self.get_current_usage()
         self.steps = 0
+        
+        # fill the state with the last value
+        value = self.state[-1]
+        self.state = [value for _ in range(self.STATE_LENTGH)]
+
         # patch_pod('localization-api1', cpu_request=f"{self.START_CPU}m", cpu_limit=f"{self.START_CPU}m", container_name='localization-api', debug=True)
         return self.state
 
@@ -94,29 +103,29 @@ class ElastisityEnv(Env):
         self.last_cpu_percentage = cpu_percentage
             # states = ([cpu_limit, cpu, memory_limit, memory, rx, tx])
         n_cpu_limit, n_cpu = self.normalize_cpu_usage(cpu_limit), self.normalize_cpu_usage(cpu)
-            
-        state = [n_cpu_limit, n_cpu, (cpu_percentage / 100)]
-        
+
+        self.ALLOCATED = cpu_limit
+        state = [n_cpu_limit, n_cpu, (cpu_percentage / 100), self.normalize_cpu_usage(self.ALLOCATED), self.normalize_cpu_usage(self.AVAILABLE)]
+
         self.states_fifo.append(state)
         self.states_fifo.pop(0)
-
+        # print(f'Agent {self.id}: ALLOCATED: {self.ALLOCATED}, AVAILABLE: {self.AVAILABLE}, cpu_limit: {cpu_limit}')
         return self.states_fifo
 
     def increase_resources(self):
         # for node in self.nodes:
         # for container_id, (pod_name, container_name, pod_ip) in list(self.node.get_containers().items()):
         cpu_limit, memory_limit = self.node.get_container_limits(self.container_id)
-        cpu_limit = min(cpu_limit + self.INCREMENT, self.MAX_CPU_LIMIT)  
-        
-        patch_pod(f'localization-api{self.id}', cpu_request=f"{cpu_limit}m", cpu_limit=f"{cpu_limit}m", container_name='localization-api', debug=True)
+        updated_cpu_limit = int(max(min(int(cpu_limit + self.INCREMENT), self.AVAILABLE), self.MIN_CPU_LIMIT))
+        patch_pod(f'localization-api{self.id}', cpu_request=f"{updated_cpu_limit}m", cpu_limit=f"{updated_cpu_limit}m", container_name='localization-api', debug=True)
 
     def decrease_resources(self):
         # for node in self.nodes:
         # for container_id, (pod_name, container_name, pod_ip) in list(self.node.get_containers().items()):
         cpu_limit, memory_limit = self.node.get_container_limits(self.container_id)
-        cpu_limit = max(cpu_limit - self.INCREMENT, self.MIN_CPU_LIMIT)
+        updated_cpu_limit = int(max(cpu_limit - self.INCREMENT, self.MIN_CPU_LIMIT))
 
-        patch_pod(f'localization-api{self.id}', cpu_request=f"{cpu_limit}m", cpu_limit=f"{cpu_limit}m", container_name='localization-api', debug=True)
+        patch_pod(f'localization-api{self.id}', cpu_request=f"{updated_cpu_limit}m", cpu_limit=f"{updated_cpu_limit}m", container_name='localization-api', debug=True)
 
     def calculate_latency(self, num_requests):
         url = f"http://localhost:{self.loadbalancer_port}/predict"

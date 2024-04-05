@@ -23,29 +23,46 @@ def infer_mdqn(n_agents=3, model='mdqn300ep500m'):
         print(f'Loaded weights for agent {i}')
         agent.eval()
 
+    INITIAL_RESOURCES = 1000
+    max_group = INITIAL_RESOURCES
+    for env in envs:
+        max_group -= env.ALLOCATED
+    for env in envs:
+        env.AVAILABLE = max_group
+
+
+    states = [env.reset() for env in envs]
+    states = [torch.tensor(np.array(state).flatten(), dtype=torch.float32, device=device).unsqueeze(0) for state in states]
+
     while True:
-        states = [env.reset() for env in envs]
-        states = [torch.tensor(np.array(state).flatten(), dtype=torch.float32, device=device).unsqueeze(0) for state in states]
+        # states = [env.reset() for env in envs]
+        # states = [torch.tensor(np.array(state).flatten(), dtype=torch.float32, device=device).unsqueeze(0) for state in states]
 
-        for t in count():
-            time.sleep(1)
+        # for t in count():
+        time.sleep(1)
 
-            with torch.no_grad():
-                actions = [dqn(state).max(1).indices.view(1, 1) for dqn, state in zip(agents, states)]
+        with torch.no_grad():
+            actions = [dqn(state).max(1).indices.view(1, 1) for dqn, state in zip(agents, states)]
 
-            next_states, rewards, dones = [], [], []
-            for i, action in enumerate(actions):
-                observation, reward, done, _ = envs[i].step(action.item())
-                next_states.append(np.array(observation).flatten())
-                rewards.append(reward)
-                dones.append(done)
-                if done:
-                    next_states[i] = None
+        next_states, rewards, dones = [], [], []
+        for i, action in enumerate(actions):
+            observation, reward, done, _ = envs[i].step(action.item())
+            next_states.append(np.array(observation).flatten())
+            rewards.append(reward)
+            dones.append(done)
+            # if done:
+            #     next_states[i] = None
 
-            states = [torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0) if observation is not None else None for observation in next_states]
+        max_group = INITIAL_RESOURCES
+        for env in envs:
+            max_group -= env.ALLOCATED
+        for env in envs:
+            env.AVAILABLE = max_group   
+        # print(envs[0].state[-3])
+        states = [torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0) if observation is not None else None for observation in next_states]
 
-            if any(dones):
-                break
+        # if any(dones):
+        #     break
 
 if __name__ == "__main__":
-    infer_mdqn(3, 'mdqn200ep1000m')
+    infer_mdqn(3, 'mdqn600ep500m')
