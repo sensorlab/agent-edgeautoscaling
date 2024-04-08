@@ -62,5 +62,4 @@ if __name__ == "__main__":
     interval = args.interval / 1000
 
     url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}/predict"
-    # spam_requests(num_users, interval)
     spam_requests(url, num_users, interval)

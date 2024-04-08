@@ -18,11 +18,12 @@ def init_nodes(debug=False, custom_label='type=ray'):
     v1 = client.CoreV1Api()
 
     ret = v1.list_pod_for_all_namespaces(label_selector='name=cadvisor')
-    ret_arm64 = v1.list_pod_for_all_namespaces(label_selector='name=cadvisor-arm64')
-    for pod in ret.items + ret_arm64.items:
+    # multi-arch cadvisor image
+    # ret_arm64 = v1.list_pod_for_all_namespaces(label_selector='name=cadvisor-arm64')
+    for pod in ret.items: # + ret_arm64.items:
         if pod.metadata.namespace == "kube-system":
-            for status in pod.status.container_statuses:
-                if status.name == "cadvisor" or status.name == "cadvisor-arm64":
+            for container in pod.status.container_statuses:
+                if container.name == "cadvisor": # or status.name == "cadvisor-arm64":
                     node_ip = None
                     if pod.status.host_ip:
                         node_ip = pod.status.host_ip

@@ -25,16 +25,12 @@ class ElastisityEnv(Env):
         for node in nodes:
             for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
                 if pod_name == f'localization-api{self.id}':
-                    # select node and container_id for agent
+                    # grab node object and container_id for agent
                     self.container_id = container_id
                     self.node = node
                     break
 
-        # self.which_node = 1
-        # self.node = next((node for node in nodes if node.name == 'raspberrypi' + str(self.which_node)), None
         self.STATE_LENTGH = 6
-        # init state with random values
-        # self.states_fifo = [[random.random(), random.random(), random.random()] for _ in range(self.STATE_LENTGH)]
         self.states_fifo = [[0, 0, 0, 0, 0] for _ in range(self.STATE_LENTGH)]
         self.state = self.get_current_usage()
 
@@ -92,16 +88,12 @@ class ElastisityEnv(Env):
         return self.state
 
     def normalize_cpu_usage(self, cpu_usage):
-        # normalized_cpu_usage = (cpu_usage - 0) / (self.MAX_CPU_LIMIT - 0)
         normalized_cpu_usage = (cpu_usage - self.MIN_CPU_LIMIT) / (self.MAX_CPU_LIMIT - self.MIN_CPU_LIMIT)
         return normalized_cpu_usage
 
     def get_current_usage(self):
-        # for node in self.nodes:
-        # for container_id, (pod_name, container_name, pod_ip) in list(self.node.get_containers().items()):
         (cpu_limit, cpu, cpu_percentage), (memory_limit, memory, memory_percentage), (rx, tx) = self.node.get_container_usage(self.container_id)
         self.last_cpu_percentage = cpu_percentage
-            # states = ([cpu_limit, cpu, memory_limit, memory, rx, tx])
         n_cpu_limit, n_cpu = self.normalize_cpu_usage(cpu_limit), self.normalize_cpu_usage(cpu)
 
         self.ALLOCATED = cpu_limit
@@ -113,15 +105,11 @@ class ElastisityEnv(Env):
         return self.states_fifo
 
     def increase_resources(self):
-        # for node in self.nodes:
-        # for container_id, (pod_name, container_name, pod_ip) in list(self.node.get_containers().items()):
         cpu_limit, memory_limit = self.node.get_container_limits(self.container_id)
         updated_cpu_limit = int(max(min(int(cpu_limit + self.INCREMENT), self.AVAILABLE), self.MIN_CPU_LIMIT))
         patch_pod(f'localization-api{self.id}', cpu_request=f"{updated_cpu_limit}m", cpu_limit=f"{updated_cpu_limit}m", container_name='localization-api', debug=True)
 
     def decrease_resources(self):
-        # for node in self.nodes:
-        # for container_id, (pod_name, container_name, pod_ip) in list(self.node.get_containers().items()):
         cpu_limit, memory_limit = self.node.get_container_limits(self.container_id)
         updated_cpu_limit = int(max(cpu_limit - self.INCREMENT, self.MIN_CPU_LIMIT))
 
