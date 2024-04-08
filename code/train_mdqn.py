@@ -19,7 +19,8 @@ from env import ElastisityEnv
 import pandas as pd
 
 from spam_cluster import spam_requests_single
-from pod_controller import get_loadbalancer_external_port
+from pod_controller import get_loadbalancer_external_port, init_container_cpu_values
+
 
 class ReplayMemory(object):
 
@@ -138,23 +139,23 @@ if __name__ == '__main__':
 
     # MEMORY_SIZE = 1000
     MEMORY_SIZE = 500
-    EPISODES = 500
+    EPISODES = 250
 
     LOAD_WEIGHTS = False
     SAVE_WEIGHTS = True
 
+    # env values
     INITIAL_RESOURCES = 250
-    INCREMENT_ACTION = 10
+    INCREMENT_ACTION = 5
     USERS = 5
-
-    MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{INITIAL_RESOURCES}mcmax'
-    os.makedirs(f'code/model_metric_data/{MODEL}', exist_ok=True)
-
-    from pod_controller import set_initial_values
-    set_initial_values()
 
     # shared reward weight
     alpha = 0.5
+
+    init_container_cpu_values()
+
+    MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{INITIAL_RESOURCES}mcmax'
+    os.makedirs(f'code/model_metric_data/{MODEL}', exist_ok=True)
 
     n_agents = 3
     envs = [ElastisityEnv(i) for i in range(1, n_agents + 1)]
@@ -166,16 +167,17 @@ if __name__ == '__main__':
     n_actions = envs[0].action_space.n
     # Get the number of state observations
     state = envs[0].reset()
+    n_observations = len(state) * len(state[0])
+    print(f"Number of observations: {n_observations} and number of actions: {n_actions}")
 
+    # init envs
     max_group = INITIAL_RESOURCES
     for env in envs:
         max_group -= env.ALLOCATED
     for env in envs:
         env.AVAILABLE = max_group
 
-    n_observations = len(state) * len(state[0])
-    print(f"Number of observations: {n_observations} and number of actions: {n_actions}")
-
+    # create networks
     agents = [DQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
     if LOAD_WEIGHTS:
         for i, agent in enumerate(agents):
@@ -194,8 +196,8 @@ if __name__ == '__main__':
     ep_latencies = []
     agent_ep_summed_rewards = [[] for _ in range(n_agents)]
 
-    # load the cluster (values fro mthe demo)
-    spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', '245', '--interval', '500'])
+    # load the cluster (simulate requests)
+    spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', '120', '--interval', '500'])
     url_spam = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}/predict"
 
     for i_episode in tqdm(range(EPISODES)):
@@ -233,20 +235,7 @@ if __name__ == '__main__':
             for env in envs:
                 env.AVAILABLE = max_group            
 
-            # latencies = [env.calculate_latency() for env in envs]
-            # latenices_for_agent.append(latencies[0])
-            # print(latencies)
-            # shared_rewards = [alpha * reward + beta * (1 - np.mean(latencies) * 10) for reward in rewards]
-            
-            # calculate mean/geomean latency for the system, it doesnt matter which agent we use
-            # latency = envs[0].calculate_latency(5)
-            latencies = [latency for latency in latencies if latency is not None]
-            if latencies:
-                latency = np.mean(latencies)
-            else:
-                latency = 99
-                print('very bad latency')
-            # step_latencies.append(envs[0].calculate_latency(1)) # without geo. mean
+            latency = np.mean([latency for latency in latencies if latency is not None])
             step_latencies.append(latency)
             shared_rewards = [alpha * reward + (1 - alpha) * (1 - latency * 10) for reward in rewards]
 
@@ -255,10 +244,6 @@ if __name__ == '__main__':
 
             [agents_step_reward[i].append(shared_rewards[i]) for i in range(n_agents)]
 
-            # each agent has its own latency, so it isnt a shared reward
-            # shared_rewards = [alpha * reward + beta * (1 - latency * 10) for reward, latency in zip(rewards, latencies)]
-
-            # print(f"Rewards: {shared_rewards}, step: {t}")
             step_rewards += np.mean(shared_rewards)
 
             next_states = [torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0) if observation is not None else None for observation in next_states]
