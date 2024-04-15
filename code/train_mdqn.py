@@ -4,6 +4,7 @@ import time
 import numpy as np
 import subprocess
 import os
+import argparse
 
 from tqdm import tqdm
 from collections import namedtuple, deque
@@ -14,12 +15,11 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-
 from env import ElastisityEnv
 import pandas as pd
 
 from spam_cluster import spam_requests_single
-from pod_controller import get_loadbalancer_external_port, init_container_cpu_values
+from pod_controller import get_loadbalancer_external_port, set_container_cpu_values
 
 
 class ReplayMemory(object):
@@ -53,7 +53,7 @@ class DQN(nn.Module):
         x = F.relu(self.layer2(x))
         return self.layer3(x)
 
-def optimize_model(policy_net, target_net, memory, optimizer):
+def optimize_model(policy_net, target_net, memory, optimizer): #, scheduler):
     if len(memory) < BATCH_SIZE:
         return
     transitions = memory.sample(BATCH_SIZE)
@@ -98,6 +98,7 @@ def optimize_model(policy_net, target_net, memory, optimizer):
     # In-place gradient clipping
     torch.nn.utils.clip_grad_value_(policy_net.parameters(), 100)
     optimizer.step()
+    # scheduler.step()
 
 def select_action(state, policy_net, env):
     global steps_done
@@ -116,6 +117,14 @@ def select_action(state, policy_net, env):
     else:
         return torch.tensor([[env.action_space.sample()]], device=device, dtype=torch.long)
 
+
+def set_available_resource(envs, initial_resources):
+    max_group = initial_resources
+    for env in envs:
+        max_group -= env.ALLOCATED
+    for env in envs:
+        env.AVAILABLE = max_group
+
 if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     Transition = namedtuple('Transition',
@@ -133,31 +142,43 @@ if __name__ == '__main__':
     EPS_START = 0.9
     # EPS_END = 0.25
     EPS_END = 0.15
-    EPS_DECAY = 5000
+    EPS_DECAY = 8_000
     TAU = 0.005
     LR = 1e-4
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--episodes', type=int, default=300)
+    parser.add_argument('--init_resources', type=int, default=500)
+    parser.add_argument('--increment_action', type=int, default=25)
+    parser.add_argument('--alpha', type=float, default=0.4, help="Weight for the shared reward, higher the more weight to latency, lower the more weight to efficiency")
+    parser.add_argument('--n_agents', type=int, default=3)
+    parser.add_argument('--rps', type=int, default=50, help="Requests per second for loading cluster")
+    args = parser.parse_args()
+
+    reqs_per_second = args.rps
+
     # MEMORY_SIZE = 1000
     MEMORY_SIZE = 500
-    EPISODES = 250
+    EPISODES = args.episodes
 
     LOAD_WEIGHTS = False
     SAVE_WEIGHTS = True
 
     # env values
-    INITIAL_RESOURCES = 250
-    INCREMENT_ACTION = 5
-    USERS = 5
+    INITIAL_RESOURCES = args.init_resources
+    INCREMENT_ACTION = args.increment_action
+    USERS = 10
+    reqs_per_second -= USERS # interval is set to 1s
 
     # shared reward weight
-    alpha = 0.5
+    alpha = args.alpha
 
-    init_container_cpu_values()
+    set_container_cpu_values(cpus=100)
 
-    MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{INITIAL_RESOURCES}mcmax'
+    MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{INITIAL_RESOURCES}mcmax{reqs_per_second}rps{alpha}alpha'
     os.makedirs(f'code/model_metric_data/{MODEL}', exist_ok=True)
 
-    n_agents = 3
+    n_agents = args.n_agents
     envs = [ElastisityEnv(i) for i in range(1, n_agents + 1)]
     for env in envs:
         env.MAX_CPU_LIMIT = INITIAL_RESOURCES
@@ -171,11 +192,7 @@ if __name__ == '__main__':
     print(f"Number of observations: {n_observations} and number of actions: {n_actions}")
 
     # init envs
-    max_group = INITIAL_RESOURCES
-    for env in envs:
-        max_group -= env.ALLOCATED
-    for env in envs:
-        env.AVAILABLE = max_group
+    set_available_resource(envs, INITIAL_RESOURCES)
 
     # create networks
     agents = [DQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
@@ -187,32 +204,35 @@ if __name__ == '__main__':
     target_nets = [DQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
     memories = [ReplayMemory(MEMORY_SIZE) for _ in range(n_agents)]
     optimizers = [optim.AdamW(agent.parameters(), lr=LR, amsgrad=True) for agent in agents]
+    # schedulers = [optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1) for optimizer in optimizers]
 
     for target_net, agent in zip(target_nets, agents):
         target_net.load_state_dict(agent.state_dict())
 
     steps_done = 0
-    ep_summed_rewards = []
-    ep_latencies = []
+    summed_rewards = []
+    mean_latencies = []
     agent_ep_summed_rewards = [[] for _ in range(n_agents)]
+    resource_dev = []
 
-    # load the cluster (simulate requests)
-    spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', '120', '--interval', '500'])
     url_spam = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}/predict"
 
     for i_episode in tqdm(range(EPISODES)):
-        # save weights every 5 episodes
-        if i_episode % 5 == 0 and SAVE_WEIGHTS:
+        if i_episode % 5 == 0 and i_episode != 0 and SAVE_WEIGHTS:
             for i, agent in enumerate(agents):
                 torch.save(agent.state_dict(), f'code/model_metric_data/{MODEL}/model_weights_agent_{i}.pth')
                 print(f"Checkpoint: Saved weights for agent {i}")
 
+        # can overfill, so we reset the loading process on every episode
+        spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(reqs_per_second), '--interval', '1000'])
         states = [env.reset() for env in envs]
+        set_available_resource(envs, INITIAL_RESOURCES)
         states = [torch.tensor(np.array(state).flatten(), dtype=torch.float32, device=device).unsqueeze(0) for state in states]
 
-        step_rewards = 0
-        step_latencies = []
-        agents_step_reward = [[] for _ in range(n_agents)]
+        ep_rewards = 0
+        ep_latencies = []
+        agents_ep_reward = [[] for _ in range(n_agents)]
+        ep_std = []
         for t in count():
             time.sleep(1)
             latencies = spam_requests_single(USERS, url_spam)
@@ -220,41 +240,44 @@ if __name__ == '__main__':
             actions = [select_action(state, agent, env) for state, agent, env in zip(states, agents, envs)]
 
             next_states, rewards, dones = [], [], []
+            resources = []
             for i, action in enumerate(actions):
                 # reward for efficiency
                 observation, reward, done, _ = envs[i].step(action.item())
+                set_available_resource(envs, INITIAL_RESOURCES) # heavy
                 next_states.append(np.array(observation).flatten())
                 rewards.append(reward)
                 dones.append(done)
+                resources.append(envs[i].ALLOCATED)
                 if done:
                     next_states[i] = None
 
-            max_group = INITIAL_RESOURCES
-            for env in envs:
-                max_group -= env.ALLOCATED
-            for env in envs:
-                env.AVAILABLE = max_group            
-
             latency = np.mean([latency for latency in latencies if latency is not None])
-            step_latencies.append(latency)
-            shared_rewards = [alpha * reward + (1 - alpha) * (1 - latency * 10) for reward in rewards]
+            ep_latencies.append(latency)
+            resource_std_dev = np.std(resources) / 100
+            ep_std.append(resource_std_dev)
+            # shared_rewards = [alpha * reward + (1 - alpha) * (1 - latency * 10) for reward in rewards]
+            shared_rewards = [alpha * reward + (1 - alpha) * (1 - latency * 10) - resource_std_dev for reward in rewards]
 
-            if t % 25 == 0:
-                print(f"SharedR A*r+B*L: {shared_rewards}, reward_part: {rewards}, latency_part: {latency}. Step: {t}")
+            if t % 25 == 0 and t != 0:
+                print(f"SharedR A*r+B*L: {shared_rewards}, reward_part: {rewards}, latency_part: {latency}, resource deviation: {resource_std_dev}. Step: {t}")
+                for env in envs:
+                    print(f"Agent {env.id}: {env.last_cpu_percentage} % CPU, {env.AVAILABLE} available CPU", end=" ")
+                print()
 
-            [agents_step_reward[i].append(shared_rewards[i]) for i in range(n_agents)]
+            [agents_ep_reward[i].append(shared_rewards[i]) for i in range(n_agents)]
 
-            step_rewards += np.mean(shared_rewards)
+            ep_rewards += np.mean(shared_rewards)
 
             next_states = [torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0) if observation is not None else None for observation in next_states]
-            rewards = [torch.tensor([reward], device=device) for reward in shared_rewards]
+            shared_reward_tensors = [torch.tensor([shared_reward], device=device) for shared_reward in shared_rewards]
 
             for i in range(n_agents):
-                memories[i].push(states[i], actions[i], next_states[i], rewards[i])
+                memories[i].push(states[i], actions[i], next_states[i], shared_reward_tensors[i])
 
             states = next_states
             for i in range(n_agents):
-                optimize_model(agents[i], target_nets[i], memories[i], optimizers[i])
+                optimize_model(agents[i], target_nets[i], memories[i], optimizers[i]) #, schedulers[i])
             
             for agent, target_net in zip(agents, target_nets):
                 target_net_state_dict = target_net.state_dict()
@@ -264,27 +287,45 @@ if __name__ == '__main__':
                 target_net.load_state_dict(target_net_state_dict)
 
             if any(dones):
+                [env.save_last_limit() for env in envs]
                 break
         
-        ep_latencies.append(np.mean(step_latencies))
-        ep_summed_rewards.append(step_rewards)
+        mean_latencies.append(np.mean(ep_latencies))
+        summed_rewards.append(ep_rewards)
+        resource_dev.append(np.mean(ep_std))
         
-        [agent_ep_summed_rewards[i].append(np.sum(reward)) for i, reward in enumerate(agents_step_reward)]
-        print(f"Episode {i_episode} reward: {step_rewards} mean latency: {np.mean(step_latencies)}")
+        [agent_ep_summed_rewards[i].append(np.sum(reward)) for i, reward in enumerate(agents_ep_reward)]
+        print(f"Episode {i_episode} reward: {ep_rewards} mean latency: {np.mean(ep_latencies)}")
 
-    spam_process.terminate()
-    print(f'Complete with {np.mean(ep_summed_rewards)} rewards')
+        print("Cleaning up remaining requests...")
+        # HACK INCOMING
+        spam_process.terminate()
+        set_container_cpu_values(1000)
+        for i in range(n_agents):
+            while True:
+                (_, _, cpu_percentage), (_, _, _), (_, _) = envs[i].node.get_container_usage(envs[i].container_id)
+                if cpu_percentage > 20:
+                    time.sleep(5)
+                else:
+                    break
+
+        [env.set_last_limit() for env in envs]
+
+    print(f'Complete with {np.mean(summed_rewards)} rewards')
 
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):
             torch.save(agent.state_dict(), f'code/model_metric_data/{MODEL}/model_weights_agent_{i}.pth')
     
         # save collected data for later analysis
-        ep_summed_rewards_df = pd.DataFrame({'Episode': range(len(ep_summed_rewards)), 'Reward': ep_summed_rewards})
+        ep_summed_rewards_df = pd.DataFrame({'Episode': range(len(summed_rewards)), 'Reward': summed_rewards})
         ep_summed_rewards_df.to_csv(f'code/model_metric_data/{MODEL}/ep_summed_rewards.csv', index=False)
 
-        ep_latencies_df = pd.DataFrame({'Episode': range(len(ep_latencies)), 'Mean Latency': ep_latencies})
+        ep_latencies_df = pd.DataFrame({'Episode': range(len(mean_latencies)), 'Mean Latency': mean_latencies})
         ep_latencies_df.to_csv(f'code/model_metric_data/{MODEL}/ep_latencies.csv', index=False)
+
+        ep_dev = pd.DataFrame({'Episode': range(len(resource_dev)), 'Deviation': resource_dev})
+        ep_dev.to_csv(f'code/model_metric_data/{MODEL}/resource_dev.csv', index=False)
 
         for agent_idx, rewards in enumerate(agent_ep_summed_rewards):
             filename = f'code/model_metric_data/{MODEL}/agent_{agent_idx}_ep_summed_rewards.csv'

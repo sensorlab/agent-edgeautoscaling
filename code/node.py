@@ -45,17 +45,20 @@ class Node:
             containers_stats = response.json()
             container = next((c for c in containers_stats if container_id in c["name"]), None)
             if container:
+                # tweak the comparable metrics to -3 for more accurate metric
                 current_cpu_usage_nanoseconds = container["stats"][-1]["cpu"]["usage"]["total"]
-                previous_cpu_usage_nanoseconds = container["stats"][-2]["cpu"]["usage"]["total"]
+                previous_cpu_usage_nanoseconds = container["stats"][-3]["cpu"]["usage"]["total"]
 
                 current_timestamp_str = container["stats"][-1]["timestamp"].split('.')[0] + 'Z'
-                previous_timestamp_str = container["stats"][-2]["timestamp"].split('.')[0] + 'Z'
+                previous_timestamp_str = container["stats"][-3]["timestamp"].split('.')[0] + 'Z'
 
                 current_timestamp = datetime.strptime(current_timestamp_str, "%Y-%m-%dT%H:%M:%SZ")
                 previous_timestamp = datetime.strptime(previous_timestamp_str, "%Y-%m-%dT%H:%M:%SZ")
 
                 time_interval = current_timestamp - previous_timestamp
                 time_interval_seconds = time_interval.total_seconds()
+
+                # print(f"curr: {current_timestamp}, prev: {previous_timestamp}, difference: {time_interval_seconds}")
 
                 cpu_usage_delta_nanoseconds = current_cpu_usage_nanoseconds - previous_cpu_usage_nanoseconds
                 cpu_usage_per_second = cpu_usage_delta_nanoseconds / time_interval_seconds
