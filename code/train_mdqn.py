@@ -42,16 +42,23 @@ class DQN(nn.Module):
 
     def __init__(self, n_observations, n_actions):
         super(DQN, self).__init__()
-        self.layer1 = nn.Linear(n_observations, 128)
-        self.layer2 = nn.Linear(128, 128)
-        self.layer3 = nn.Linear(128, n_actions)
+        # self.layer1 = nn.Linear(n_observations, 128)
+        # self.layer2 = nn.Linear(128, 128)
+        # self.layer3 = nn.Linear(128, n_actions)
+        self.layer1 = nn.Linear(n_observations, 64)
+        self.layer2 = nn.Linear(64, 128)
+        self.layer3 = nn.Linear(128, 64)
+        self.layer4 = nn.Linear(64, n_actions)
 
     # Called with either one element to determine next action, or a batch
     # during optimization. Returns tensor([[left0exp,right0exp]...]).
     def forward(self, x):
         x = F.relu(self.layer1(x))
         x = F.relu(self.layer2(x))
-        return self.layer3(x)
+        # return self.layer3(x)
+        x = F.relu(self.layer3(x))
+        return self.layer4(x)
+
 
 def optimize_model(policy_net, target_net, memory, optimizer): #, scheduler):
     if len(memory) < BATCH_SIZE:
@@ -100,6 +107,7 @@ def optimize_model(policy_net, target_net, memory, optimizer): #, scheduler):
     optimizer.step()
     # scheduler.step()
 
+
 def select_action(state, policy_net, env):
     global steps_done
     sample = random.random()
@@ -124,6 +132,7 @@ def set_available_resource(envs, initial_resources):
         max_group -= env.ALLOCATED
     for env in envs:
         env.AVAILABLE = max_group
+
 
 if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -153,9 +162,11 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', type=float, default=0.4, help="Weight for the shared reward, higher the more weight to latency, lower the more weight to efficiency")
     parser.add_argument('--n_agents', type=int, default=3)
     parser.add_argument('--rps', type=int, default=50, help="Requests per second for loading cluster")
+    parser.add_argument('--random_rps', type=bool, default=False, help="Train on random requests every episode")
     args = parser.parse_args()
 
     reqs_per_second = args.rps
+    randomize_reqs = args.random_rps
 
     # MEMORY_SIZE = 1000
     MEMORY_SIZE = 500
@@ -179,7 +190,7 @@ if __name__ == '__main__':
     os.makedirs(f'code/model_metric_data/{MODEL}', exist_ok=True)
 
     n_agents = args.n_agents
-    envs = [ElastisityEnv(i) for i in range(1, n_agents + 1)]
+    envs = [ElastisityEnv(i, n_agents) for i in range(1, n_agents + 1)]
     for env in envs:
         env.MAX_CPU_LIMIT = INITIAL_RESOURCES
         env.INCREMENT = INCREMENT_ACTION
@@ -223,8 +234,13 @@ if __name__ == '__main__':
                 torch.save(agent.state_dict(), f'code/model_metric_data/{MODEL}/model_weights_agent_{i}.pth')
                 print(f"Checkpoint: Saved weights for agent {i}")
 
+        # randomize the requests per second to get rid of bias
+        random_rps = np.random.randint(5, reqs_per_second) if randomize_reqs else reqs_per_second
+        
         # can overfill, so we reset the loading process on every episode
-        spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(reqs_per_second), '--interval', '1000'])
+        spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', '1000'])
+        print(f"Loading the cluster with {random_rps} requests/second")
+        time.sleep(1) # for the limits to be set
         states = [env.reset() for env in envs]
         set_available_resource(envs, INITIAL_RESOURCES)
         states = [torch.tensor(np.array(state).flatten(), dtype=torch.float32, device=device).unsqueeze(0) for state in states]
@@ -254,7 +270,7 @@ if __name__ == '__main__':
 
             latency = np.mean([latency for latency in latencies if latency is not None])
             ep_latencies.append(latency)
-            resource_std_dev = np.std(resources) / 100
+            resource_std_dev = np.std(resources) / 500
             ep_std.append(resource_std_dev)
             # shared_rewards = [alpha * reward + (1 - alpha) * (1 - latency * 10) for reward in rewards]
             shared_rewards = [alpha * reward + (1 - alpha) * (1 - latency * 10) - resource_std_dev for reward in rewards]
@@ -287,7 +303,8 @@ if __name__ == '__main__':
                 target_net.load_state_dict(target_net_state_dict)
 
             if any(dones):
-                [env.save_last_limit() for env in envs]
+                for env in envs:
+                    env.save_last_limit()
                 break
         
         mean_latencies.append(np.mean(ep_latencies))
@@ -309,9 +326,10 @@ if __name__ == '__main__':
                 else:
                     break
 
-        [env.set_last_limit() for env in envs]
+        for env in envs:
+            env.set_last_limit()
 
-    print(f'Complete with {np.mean(summed_rewards)} rewards')
+    print(f'Completed {EPISODES} episodes with {np.mean(summed_rewards)} rewards and {np.mean(mean_latencies)} mean latencies.')
 
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):

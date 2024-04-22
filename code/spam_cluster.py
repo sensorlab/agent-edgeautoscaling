@@ -7,8 +7,10 @@ import threading
 from threading import Lock
 from concurrent.futures import ThreadPoolExecutor
 
+
 latencies = []
 latencies_lock = Lock()
+
 
 def make_request_thread_single(url, data):
     try:
@@ -19,6 +21,7 @@ def make_request_thread_single(url, data):
     except Exception as e:
         pass
 
+
 def spam_requests_single(num_users, url):
     data = {
         "feature": 0
@@ -27,6 +30,7 @@ def spam_requests_single(num_users, url):
     with ThreadPoolExecutor(max_workers=num_users) as executor:
         futures = {executor.submit(make_request_thread_single, url, data) for _ in range(num_users)}
         return [future.result() for future in futures]
+
 
 def make_request_thread(url, data, interval):
     while True:
@@ -51,6 +55,7 @@ def spam_requests(url, num_users, interval):
 
     for thread in threads:
         thread.join()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

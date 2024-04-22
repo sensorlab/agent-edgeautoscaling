@@ -4,16 +4,15 @@ import time
 
 from itertools import count
 
-from train_mdqn import DQN
+from train_mdqn import DQN, set_available_resource
 from env import ElastisityEnv
-
 from pod_controller import set_container_cpu_values
-from train_mdqn import set_available_resource
+
 
 def infer_mdqn(n_agents=3, model='mdqn300ep500m'):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     n_agents = 3
-    envs = [ElastisityEnv(i) for i in range(1, n_agents + 1)]
+    envs = [ElastisityEnv(i, n_agents) for i in range(1, n_agents + 1)]
     state = envs[0].reset()
     n_actions = envs[0].action_space.n
     n_observations = len(state) * len(state[0])
@@ -27,8 +26,8 @@ def infer_mdqn(n_agents=3, model='mdqn300ep500m'):
         agent.eval()
     
     # get paremeters from model folder name
-    INITIAL_RESOURCES = 1000
-    INCREMENT_ACTION = 50
+    INITIAL_RESOURCES = 500
+    INCREMENT_ACTION = 25
     for env in envs:
         env.MAX_CPU_LIMIT = INITIAL_RESOURCES
         env.INCREMENT = INCREMENT_ACTION
@@ -65,6 +64,7 @@ def infer_mdqn(n_agents=3, model='mdqn300ep500m'):
         # if any(dones):
         #     break
 
+
 if __name__ == "__main__":
     set_container_cpu_values(50)
-    infer_mdqn(3, 'testing_models/mdqn250ep500m50inc1000mcmax145rps0.6alpha')
+    infer_mdqn(3, 'variational_loading/mdqn500ep500m25inc500mcmax90rps0.75alpha')
