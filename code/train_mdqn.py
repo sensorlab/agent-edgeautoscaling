@@ -60,6 +60,34 @@ class DQN(nn.Module):
         return self.layer4(x)
 
 
+class DuelingDQN(nn.Module):
+
+    def __init__(self, n_observations, n_actions):
+        super(DuelingDQN, self).__init__()
+        self.feature = nn.Sequential(
+            nn.Linear(n_observations, 128),
+            nn.ReLU()
+        )
+        
+        self.advantage = nn.Sequential(
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, n_actions)
+        )
+        
+        self.value = nn.Sequential(
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1)
+        )
+
+    def forward(self, x):
+        x = self.feature(x)
+        advantage = self.advantage(x)
+        value = self.value(x)
+        return value + advantage - advantage.mean()
+
+
 def optimize_model(policy_net, target_net, memory, optimizer): #, scheduler):
     if len(memory) < BATCH_SIZE:
         return
@@ -91,7 +119,11 @@ def optimize_model(policy_net, target_net, memory, optimizer): #, scheduler):
     # state value or 0 in case the state was final.
     next_state_values = torch.zeros(BATCH_SIZE, device=device)
     with torch.no_grad():
-        next_state_values[non_final_mask] = target_net(non_final_next_states).max(1).values
+        if double:
+            next_state_actions = policy_net(non_final_next_states).max(1)[1].unsqueeze(1)
+            next_state_values[non_final_mask] = target_net(non_final_next_states).gather(1, next_state_actions).squeeze(1)
+        else:
+            next_state_values[non_final_mask] = target_net(non_final_next_states).max(1).values
     # Compute the expected Q values
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
@@ -163,20 +195,28 @@ if __name__ == '__main__':
     parser.add_argument('--n_agents', type=int, default=3)
     parser.add_argument('--rps', type=int, default=50, help="Requests per second for loading cluster")
     parser.add_argument('--random_rps', type=bool, default=False, help="Train on random requests every episode")
+    parser.add_argument('--dueling', type=bool, default=False, help="Dueling rl")
+    parser.add_argument('--double', type=bool, default=False, help="Double rl")
+    parser.add_argument('--load_weights', type=bool, default=False, help="Load weights from previous training")
+    parser.add_argument('--variable_resources', type=bool, default=False, help="Random resources every 10 episodes")
     args = parser.parse_args()
+
+    double = args.double
+    dueling = args.dueling
 
     reqs_per_second = args.rps
     randomize_reqs = args.random_rps
+    variable_resources = args.variable_resources
 
     # MEMORY_SIZE = 1000
     MEMORY_SIZE = 500
     EPISODES = args.episodes
 
-    LOAD_WEIGHTS = False
+    LOAD_WEIGHTS = args.load_weights
     SAVE_WEIGHTS = True
 
     # env values
-    INITIAL_RESOURCES = args.init_resources
+    RESOURCES = args.init_resources
     INCREMENT_ACTION = args.increment_action
     USERS = 10
     reqs_per_second -= USERS # interval is set to 1s
@@ -186,13 +226,17 @@ if __name__ == '__main__':
 
     set_container_cpu_values(cpus=100)
 
-    MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{INITIAL_RESOURCES}mcmax{reqs_per_second}rps{alpha}alpha'
+    MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{RESOURCES}mcmax{reqs_per_second}rps{alpha}alpha'
+    if double:
+        MODEL += '_double'
+    if dueling:
+        MODEL += '_dueling'
     os.makedirs(f'code/model_metric_data/{MODEL}', exist_ok=True)
 
     n_agents = args.n_agents
     envs = [ElastisityEnv(i, n_agents) for i in range(1, n_agents + 1)]
     for env in envs:
-        env.MAX_CPU_LIMIT = INITIAL_RESOURCES
+        env.MAX_CPU_LIMIT = RESOURCES
         env.INCREMENT = INCREMENT_ACTION
 
     # Get number of actions from gym action space
@@ -203,16 +247,21 @@ if __name__ == '__main__':
     print(f"Number of observations: {n_observations} and number of actions: {n_actions}")
 
     # init envs
-    set_available_resource(envs, INITIAL_RESOURCES)
+    set_available_resource(envs, RESOURCES)
 
     # create networks
-    agents = [DQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
+    if dueling:
+        agents = [DuelingDQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
+        target_nets = [DuelingDQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
+    else:
+        agents = [DQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
+        target_nets = [DQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
+    
     if LOAD_WEIGHTS:
         for i, agent in enumerate(agents):
             agent.load_state_dict(torch.load(f'code/model_metric_data/{MODEL}/model_weights_agent_{i}.pth'))
         print(f"Loaded weights for agents")
 
-    target_nets = [DQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
     memories = [ReplayMemory(MEMORY_SIZE) for _ in range(n_agents)]
     optimizers = [optim.AdamW(agent.parameters(), lr=LR, amsgrad=True) for agent in agents]
     # schedulers = [optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1) for optimizer in optimizers]
@@ -226,13 +275,19 @@ if __name__ == '__main__':
     agent_ep_summed_rewards = [[] for _ in range(n_agents)]
     resource_dev = []
 
-    url_spam = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}/predict"
+    # url_spam = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}/predict"
+    url_spam = f"http://localhost:30888/predict"
 
     for i_episode in tqdm(range(EPISODES)):
         if i_episode % 5 == 0 and i_episode != 0 and SAVE_WEIGHTS:
             for i, agent in enumerate(agents):
                 torch.save(agent.state_dict(), f'code/model_metric_data/{MODEL}/model_weights_agent_{i}.pth')
                 print(f"Checkpoint: Saved weights for agent {i}")
+        if variable_resources and i_episode % 10 == 0 and i_episode != 0:
+            RESOURCES = random.choice([500, 750, 1000, 1250, 1500, 1750, 2000])
+            for env in envs:
+                env.MAX_CPU_LIMIT = RESOURCES
+            print(f"Resources changed to {RESOURCES} for episode {i_episode}")
 
         # randomize the requests per second to get rid of bias
         random_rps = np.random.randint(5, reqs_per_second) if randomize_reqs else reqs_per_second
@@ -242,7 +297,7 @@ if __name__ == '__main__':
         print(f"Loading the cluster with {random_rps} requests/second")
         time.sleep(1) # for the limits to be set
         states = [env.reset() for env in envs]
-        set_available_resource(envs, INITIAL_RESOURCES)
+        set_available_resource(envs, RESOURCES)
         states = [torch.tensor(np.array(state).flatten(), dtype=torch.float32, device=device).unsqueeze(0) for state in states]
 
         ep_rewards = 0
@@ -260,7 +315,7 @@ if __name__ == '__main__':
             for i, action in enumerate(actions):
                 # reward for efficiency
                 observation, reward, done, _ = envs[i].step(action.item())
-                set_available_resource(envs, INITIAL_RESOURCES) # heavy
+                set_available_resource(envs, RESOURCES) # heavy
                 next_states.append(np.array(observation).flatten())
                 rewards.append(reward)
                 dones.append(done)

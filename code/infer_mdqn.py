@@ -4,7 +4,7 @@ import time
 
 from itertools import count
 
-from train_mdqn import DQN, set_available_resource
+from train_mdqn import DQN, set_available_resource, DuelingDQN
 from env import ElastisityEnv
 from pod_controller import set_container_cpu_values
 
@@ -17,7 +17,8 @@ def infer_mdqn(n_agents=3, model='mdqn300ep500m'):
     n_actions = envs[0].action_space.n
     n_observations = len(state) * len(state[0])
 
-    agents = [DQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
+    # agents = [DQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
+    agents = [DuelingDQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
 
     for i, agent in enumerate(agents):
         agent.load_state_dict(torch.load(f'trained/{model}/model_weights_agent_{i}.pth'))
@@ -67,4 +68,6 @@ def infer_mdqn(n_agents=3, model='mdqn300ep500m'):
 
 if __name__ == "__main__":
     set_container_cpu_values(50)
-    infer_mdqn(3, 'variational_loading/mdqn500ep500m25inc500mcmax90rps0.75alpha')
+    # infer_mdqn(3, 'variational_loading/mdqn600ep500m25inc500mcmax140rps0.5alpha_double_dueling')
+    infer_mdqn(3, 'variational_loading/mdqn300ep500m25inc500mcmax90rps0.75alpha_double_dueling_pretrained')
+    # infer_mdqn(3, 'variational_loading/variational_resources/mdqn600ep500m25inc1000mcmax110rps0.75alpha_double_dueling')
