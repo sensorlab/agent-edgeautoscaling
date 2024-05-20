@@ -27,10 +27,10 @@ class Node:
             for pod in ret.items:
                 if pod.status.phase == "Running":
                     for container_status in pod.status.container_statuses:
-                        self.containers[container_status.container_id.split("//")[1]] = (pod.metadata.name,
-                                                                                         container_status.name,
-                                                                                         pod.status.pod_ip)
-
+                        # make sure its the proper container
+                        if container_status.name == custom_label.split("=")[-1]:
+                            self.containers[container_status.container_id.split("//")[1]] = (pod.metadata.name, container_status.name, pod.status.pod_ip)
+        
         except Exception as e:
             print(f"Error: {e}")
 

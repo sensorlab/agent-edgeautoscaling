@@ -1,5 +1,4 @@
-from gymnasium import Env
-from gymnasium import spaces
+from gymnasium import Env, spaces
 
 from utils import init_nodes
 from pod_controller import get_loadbalancer_external_port, patch_pod
@@ -59,11 +58,7 @@ class ElastisityEnv(Env):
         reward = - usage_penalty
 
         self.steps += 1
-        if self.steps >= self.MAX_STEPS:
-            # print(f"Max steps reached")
-            done = True
-        else:
-            done = False
+        done = self.steps >= self.MAX_STEPS
 
         return self.state, reward, done, 0
     
@@ -75,9 +70,8 @@ class ElastisityEnv(Env):
         self.state = self.get_current_usage()
         self.steps = 0
         
-        # fill the state with the last value
-        value = self.state[-1]
-        self.state = [value for _ in range(self.STATE_LENTGH)]
+        # fill state with the last value
+        self.state = [self.state[-1]] * self.STATE_LENTGH
 
         return self.state
 
