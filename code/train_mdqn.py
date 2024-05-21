@@ -195,6 +195,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_agents', type=int, default=3)
     parser.add_argument('--rps', type=int, default=50, help="Requests per second for loading cluster")
     parser.add_argument('--random_rps', type=bool, default=False, help="Train on random requests every episode")
+    parser.add_argument('--interval', type=int, default=1000, help="Milliseconds interval for requests")
     parser.add_argument('--dueling', type=bool, default=False, help="Dueling rl")
     parser.add_argument('--double', type=bool, default=False, help="Double rl")
     parser.add_argument('--load_weights', type=bool, default=False, help="Load weights from previous training")
@@ -205,6 +206,7 @@ if __name__ == '__main__':
     dueling = args.dueling
 
     reqs_per_second = args.rps
+    interval = args.interval
     randomize_reqs = args.random_rps
     variable_resources = args.variable_resources
 
@@ -226,7 +228,7 @@ if __name__ == '__main__':
 
     set_container_cpu_values(cpus=100)
 
-    MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{RESOURCES}mcmax{reqs_per_second}rps{alpha}alpha'
+    MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{RESOURCES}mcmax{reqs_per_second}rps{interval}interval{alpha}alpha'
     if double:
         MODEL += '_double'
     if dueling:
@@ -293,7 +295,7 @@ if __name__ == '__main__':
         random_rps = np.random.randint(5, reqs_per_second) if randomize_reqs else reqs_per_second
         
         # can overfill, so we reset the loading process on every episode
-        spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', '1000'])
+        spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval)])
         print(f"Loading the cluster with {random_rps} requests/second")
         time.sleep(1) # for the limits to be set
         states = [env.reset() for env in envs]
