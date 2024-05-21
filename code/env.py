@@ -6,7 +6,7 @@ from pod_controller import get_loadbalancer_external_port, patch_pod
 class ElastisityEnv(Env):
     def __init__(self, id, n_agents):
         super().__init__()
-        self.DEBUG = True
+        self.DEBUG = False
 
         self.n_agents = n_agents
         self.MAX_CPU_LIMIT = 1000

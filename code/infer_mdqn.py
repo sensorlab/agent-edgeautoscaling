@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import time
+import argparse
 
 from itertools import count
 
@@ -9,7 +10,7 @@ from env import ElastisityEnv
 from pod_controller import set_container_cpu_values
 
 
-def infer_mdqn(n_agents=3, model='mdqn300ep500m'):
+def infer_mdqn(n_agents=3, model='mdqn300ep500m', resources=1000, increment=25, debug=True):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     n_agents = 3
     envs = [ElastisityEnv(i, n_agents) for i in range(1, n_agents + 1)]
@@ -27,14 +28,13 @@ def infer_mdqn(n_agents=3, model='mdqn300ep500m'):
         agent.eval()
     
     # get paremeters from model folder name
-    INITIAL_RESOURCES = 500
-    INCREMENT_ACTION = 25
     for env in envs:
-        env.MAX_CPU_LIMIT = INITIAL_RESOURCES
-        env.INCREMENT = INCREMENT_ACTION
+        env.DEBUG = debug
+        env.MAX_CPU_LIMIT = resources
+        env.INCREMENT = increment
 
-    set_available_resource(envs, INITIAL_RESOURCES)
-    print(f"Loaded model with parameters: initial resources: {INITIAL_RESOURCES}, increment action: {INCREMENT_ACTION}, n_agents: {n_agents}")
+    set_available_resource(envs, resources)
+    print(f"Loaded model with parameters: initial resources: {resources}, increment action: {increment}, n_agents: {n_agents}")
 
     states = [env.reset() for env in envs]
     states = [torch.tensor(np.array(state).flatten(), dtype=torch.float32, device=device).unsqueeze(0) for state in states]
@@ -52,7 +52,7 @@ def infer_mdqn(n_agents=3, model='mdqn300ep500m'):
         next_states, rewards, dones = [], [], []
         for i, action in enumerate(actions):
             observation, reward, done, _ = envs[i].step(action.item())
-            set_available_resource(envs, INITIAL_RESOURCES)
+            set_available_resource(envs, resources)
             next_states.append(np.array(observation).flatten())
             rewards.append(reward)
             dones.append(done)
@@ -67,7 +67,15 @@ def infer_mdqn(n_agents=3, model='mdqn300ep500m'):
 
 
 if __name__ == "__main__":
-    set_container_cpu_values(50)
+    parser = argparse.ArgumentParser(description='Infer MDQN')
+    parser.add_argument('--resources', type=int, default=1000, help='Initial resources')
+    parser.add_argument('--increment', type=int, default=25, help='Increment action')
+    parser.add_argument('--debug', action='store_true', help='Debug')
+    args = parser.parse_args()
+
+    infer_mdqn(3, 'variational_loading/variational_resources/mdqn600ep500m25inc1000mcmax50rps500interval0.75alpha_double_dueling', args.resources, args.increment, args.debug)
+
+    # set_container_cpu_values(50)
     # infer_mdqn(3, 'variational_loading/mdqn600ep500m25inc500mcmax140rps0.5alpha_double_dueling')
-    infer_mdqn(3, 'variational_loading/mdqn300ep500m25inc500mcmax90rps0.75alpha_double_dueling_pretrained')
-    # infer_mdqn(3, 'variational_loading/variational_resources/mdqn600ep500m25inc1000mcmax110rps0.75alpha_double_dueling')
+    # infer_mdqn(3, 'variational_loading/mdqn300ep500m25inc500mcmax90rps0.75alpha_double_dueling_pretrained')
+    # infer_mdqn(3, 'variational_loading/variational_resources/mdqn600ep500m25inc1000mcmax50rps500interval0.75alpha_double_dueling')
