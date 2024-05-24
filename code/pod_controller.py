@@ -148,7 +148,7 @@ def create_pod_from(source_pod_name, node_name=None, debug=False):
 
 
 def patch_pod(pod_name, cpu_request="1", cpu_limit="1", memory_request=None, memory_limit=None,
-              container_name="ray-worker", debug=False):
+              container_name="ray-worker", debug=False, print_output=False):
     if debug:
         config.load_kube_config()
     else:
@@ -190,7 +190,8 @@ def patch_pod(pod_name, cpu_request="1", cpu_limit="1", memory_request=None, mem
             namespace="default",
             body=patch,
         )
-        # print(f"Pod {pod_name} patched successfully to {cpu_request} request and {cpu_limit} limit")
+        if print_output:
+            print(f"Pod {pod_name} patched successfully to {cpu_request} request and {cpu_limit} limit")
     except Exception as e:
         print(f"Error: {e}")
 
