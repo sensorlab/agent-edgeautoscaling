@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import numpy as np
 import time
 import threading
+from pydantic import BaseModel
 
 from fastapi import FastAPI
 
@@ -49,89 +50,97 @@ class DuelingDQN(nn.Module):
         value = self.value(x)
         return value + advantage - advantage.mean()
 
-def set_available_resource(envs, initial_resources):
-    max_group = initial_resources
-    for env in envs:
-        max_group -= env.ALLOCATED
-    for env in envs:
-        env.AVAILABLE = max_group
-
-def infer_mdqn(n_agents=3, stop_signal=None, resources=1000, increment=25, debug=True):
+class Application:
+    def __init__(self):
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.n_agents = 3
+        self.envs = [ElastisityEnv(i, self.n_agents) for i in range(1, self.n_agents + 1)]
+        state = self.envs[0].reset()
+        n_actions = self.envs[0].action_space.n
+        n_observations = len(state) * len(state[0])
+        self.agents = [DuelingDQN(n_observations, n_actions).to(self.device) for _ in range(self.n_agents)]
+        self.resources = 1000
+        self.increment = 25
+        self.debug = True
+        for env in self.envs:
+            env.DEBUG = self.debug
+            env.MAX_CPU_LIMIT = self.resources
+            env.INCREMENT = self.increment
+        self.set_available_resource(self.resources)
+        for i, agent in enumerate(self.agents):
+            agent.load_state_dict(torch.load(f'model_weights_agent_{i}.pth'))
+            agent.eval()
+        print(f"Loaded model with parameters: initial resources: {self.resources}, increment action: {self.increment}, n_agents: {self.n_agents}")
+        self.infer_thread = None
+        self.stop_signal = threading.Event()
     
-    states = [env.reset() for env in envs]
-    states = [torch.tensor(np.array(state).flatten(), dtype=torch.float32, device=device).unsqueeze(0) for state in states]
-    while not stop_signal.is_set():
-        time.sleep(1)
+    def infer_mdqn(self):
+        states = [env.reset() for env in self.envs]
+        states = [torch.tensor(np.array(state).flatten(), dtype=torch.float32, device=self.device).unsqueeze(0) for state in states]
+        while not self.stop_signal.is_set():
+            time.sleep(1)
 
-        with torch.no_grad():
-            actions = [dqn(state).max(1).indices.view(1, 1) for dqn, state in zip(agents, states)]
+            with torch.no_grad():
+                actions = [dqn(state).max(1).indices.view(1, 1) for dqn, state in zip(self.agents, states)]
 
-        next_states, rewards, dones = [], [], []
-        for i, action in enumerate(actions):
-            observation, reward, done, _ = envs[i].step(action.item())
-            set_available_resource(envs, resources)
-            next_states.append(np.array(observation).flatten())
-            rewards.append(reward)
-            dones.append(done)
-            # if done:
-            #     next_states[i] = None
+            next_states, rewards, dones = [], [], []
+            for i, action in enumerate(actions):
+                observation, reward, done, _ = self.envs[i].step(action.item())
+                self.set_available_resource(self.resources)
+                next_states.append(np.array(observation).flatten())
+                rewards.append(reward)
+                dones.append(done)
 
-        # print(envs[0].state[-3])
-        states = [torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0) if observation is not None else None for observation in next_states]
+            states = [torch.tensor(observation, dtype=torch.float32, device=self.device).unsqueeze(0) if observation is not None else None for observation in next_states]
 
-        if stop_signal.is_set():
-            break
+            if self.stop_signal.is_set():
+                break
+    
+    def set_available_resource(self, resources):
+        max_group = resources
+        for env in self.envs:
+            max_group -= env.ALLOCATED
+        for env in self.envs:
+            env.AVAILABLE = max_group
 
+    def start_inference(self):
+        if self.infer_thread is None or not self.infer_thread.is_alive():
+            self.stop_signal.clear()
+            self.infer_thread = threading.Thread(target=self.infer_mdqn)
+            self.infer_thread.start()
+            return {"message": "Inference started"}
+        else:
+            return {"message": "Inference already running"}
 
-# set pods initial values
-set_container_cpu_values(cpus=100)
+    def stop_inference(self):
+        if self.infer_thread is not None and self.infer_thread.is_alive():
+            self.stop_signal.set()
+            return {"message": "Inference stopped"}
+        else:
+            return {"message": "Inference not running"}
 
-# Load model
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-n_agents = 3
-envs = [ElastisityEnv(i, n_agents) for i in range(1, n_agents + 1)]
-state = envs[0].reset()
-n_actions = envs[0].action_space.n
-n_observations = len(state) * len(state[0])
+    def set_resources(self, new_resources):
+        self.resources = new_resources
+        for env in self.envs:
+            env.MAX_CPU_LIMIT = new_resources
+        self.set_available_resource(new_resources)
+        print(f"Resources set to {new_resources}")
+        return {"message": f"Resources set to {new_resources}"}
 
-agents = [DuelingDQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
+app = Application()
+fastapi_app = FastAPI()
 
-resources = 1000
-increment = 25
-debug = True
-for env in envs:
-    env.DEBUG = debug
-    env.MAX_CPU_LIMIT = resources
-    env.INCREMENT = increment
-set_available_resource(envs, resources)
+class Item(BaseModel):
+    resources: int
 
-for i, agent in enumerate(agents):
-    agent.load_state_dict(torch.load(f'model_weights_agent_{i}.pth'))
-    print(f'Loaded weights for agent {i}')
-    agent.eval()
-
-print(f"Loaded model with parameters: initial resources: {resources}, increment action: {increment}, n_agents: {n_agents}")
-
-app = FastAPI()
-infer_thread = None
-stop_signal = threading.Event()
-
-@app.post("/start")
+@fastapi_app.post("/start")
 def start_inference():
-    global infer_thread, stop_signal
-    if infer_thread is None or not infer_thread.is_alive():
-        stop_signal.clear()
-        infer_thread = threading.Thread(target=infer_mdqn, args=(3, stop_signal, resources, increment))
-        infer_thread.start()
-        return {"message": "Inference started"}
-    else:
-        return {"message": "Inference already running"}
+    return app.start_inference()
 
-@app.post("/stop")
+@fastapi_app.post("/stop")
 def stop_inference():
-    global infer_thread, stop_signal
-    if infer_thread is not None and infer_thread.is_alive():
-        stop_signal.set()
-        return {"message": "Inference stopped"}
-    else:
-        return {"message": "Inference not running"}
+    return app.stop_inference()
+
+@fastapi_app.post("/set_resources")
+def set_resources(item: Item):
+    return app.set_resources(item.resources)

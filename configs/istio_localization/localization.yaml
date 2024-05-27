@@ -12,6 +12,11 @@ spec:
   containers:
   - name: localization-api
     image: wrathchild14/localization-reg:latest
+    resizePolicy:
+      - resourceName: cpu
+        restartPolicy: NotRequired
+      - resourceName: memory
+        restartPolicy: NotRequired
     resources:
       limits:
         cpu: "500m"
@@ -35,6 +40,11 @@ spec:
   containers:
   - name: localization-api
     image: wrathchild14/localization-reg:latest
+    resizePolicy:
+      - resourceName: cpu
+        restartPolicy: NotRequired
+      - resourceName: memory
+        restartPolicy: NotRequired
     resources:
       limits:
         cpu: "500m"
@@ -58,6 +68,11 @@ spec:
   containers:
   - name: localization-api
     image: wrathchild14/localization-reg:latest
+    resizePolicy:
+      - resourceName: cpu
+        restartPolicy: NotRequired
+      - resourceName: memory
+        restartPolicy: NotRequired
     resources:
       limits:
         cpu: "500m"
@@ -120,13 +135,13 @@ spec:
         subset: v2
         port:
           number: 8088
-      weight: 80
+      weight: 60
     - destination:
         host: localization-service.default.svc.cluster.local
         subset: v3
         port:
           number: 8088
-      weight: 10
+      weight: 30
 
 ---
 

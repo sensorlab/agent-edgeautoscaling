@@ -1,6 +1,6 @@
 # Run
 
-`uvicorn elasticity:app`
+`uvicorn elasticity:fastapi_app`
 
 ```
 .
