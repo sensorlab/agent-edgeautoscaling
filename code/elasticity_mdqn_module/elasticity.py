@@ -126,6 +126,9 @@ class Application:
         self.set_available_resource(new_resources)
         print(f"Resources set to {new_resources}")
         return {"message": f"Resources set to {new_resources}"}
+    
+    def set_default(self):
+        set_container_cpu_values(100, n=3)
 
 app = Application()
 fastapi_app = FastAPI()
@@ -144,3 +147,8 @@ def stop_inference():
 @fastapi_app.post("/set_resources")
 def set_resources(item: Item):
     return app.set_resources(item.resources)
+
+@fastapi_app.post("/set_default")
+def set_default():
+    return app.set_default()
+
