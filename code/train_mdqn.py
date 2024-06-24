@@ -182,8 +182,8 @@ if __name__ == '__main__':
     GAMMA = 0.99
     EPS_START = 0.9
     # EPS_END = 0.25
-    EPS_END = 0.15
-    EPS_DECAY = 8_000
+    EPS_END = 0.1
+    EPS_DECAY = 10_000
     TAU = 0.005
     LR = 1e-4
 
@@ -229,10 +229,9 @@ if __name__ == '__main__':
     set_container_cpu_values(cpus=100)
 
     MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{RESOURCES}mcmax{reqs_per_second}rps{interval}interval{alpha}alpha'
-    if double:
-        MODEL += '_double'
-    if dueling:
-        MODEL += '_dueling'
+    suffixes = ['_double' if double else '', '_dueling' if dueling else '', '_varres' if variable_resources else '']
+    MODEL += ''.join(suffixes)
+
     os.makedirs(f'code/model_metric_data/{MODEL}', exist_ok=True)
 
     n_agents = args.n_agents
@@ -277,8 +276,8 @@ if __name__ == '__main__':
     agent_ep_summed_rewards = [[] for _ in range(n_agents)]
     resource_dev = []
 
-    # url_spam = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}/predict"
-    url_spam = f"http://localhost:30888/predict"
+    # url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}/predict"
+    url = f"http://localhost:30888/predict"
 
     for i_episode in tqdm(range(EPISODES)):
         if i_episode % 5 == 0 and i_episode != 0 and SAVE_WEIGHTS:
@@ -296,7 +295,7 @@ if __name__ == '__main__':
         
         # can overfill, so we reset the loading process on every episode
         spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval)])
-        print(f"Loading the cluster with {random_rps} requests/second")
+        print(f"Loading the cluster with {random_rps} requests per {interval} ms")
         time.sleep(1) # for the limits to be set
         states = [env.reset() for env in envs]
         set_available_resource(envs, RESOURCES)
@@ -308,7 +307,7 @@ if __name__ == '__main__':
         ep_std = []
         for t in count():
             time.sleep(1)
-            latencies = spam_requests_single(USERS, url_spam)
+            latencies = spam_requests_single(USERS, url)
 
             actions = [select_action(state, agent, env) for state, agent, env in zip(states, agents, envs)]
 
@@ -329,8 +328,8 @@ if __name__ == '__main__':
             ep_latencies.append(latency)
             resource_std_dev = np.std(resources) / 500
             ep_std.append(resource_std_dev)
-            # shared_rewards = [alpha * reward + (1 - alpha) * (1 - latency * 10) for reward in rewards]
-            shared_rewards = [alpha * reward + (1 - alpha) * (1 - latency * 10) - resource_std_dev for reward in rewards]
+            shared_rewards = [alpha * reward + (1 - alpha) * (1 - latency * 10) for reward in rewards]
+            # shared_rewards = [alpha * reward + (1 - alpha) * (1 - latency * 10) - resource_std_dev for reward in rewards]
 
             if t % 25 == 0 and t != 0:
                 print(f"SharedR A*r+B*L: {shared_rewards}, reward_part: {rewards}, latency_part: {latency}, resource deviation: {resource_std_dev}. Step: {t}")
