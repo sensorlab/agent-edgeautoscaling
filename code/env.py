@@ -98,12 +98,13 @@ class ElastisityEnv(Env):
     def increase_resources(self):
         cpu_limit, memory_limit = self.node.get_container_limits(self.container_id)
         updated_cpu_limit = int(max(min(cpu_limit + self.INCREMENT, cpu_limit + self.AVAILABLE), self.MIN_CPU_LIMIT))
+        self.ALLOCATED = updated_cpu_limit
         patch_pod(f'localization-api{self.id}', cpu_request=f"{updated_cpu_limit}m", cpu_limit=f"{updated_cpu_limit}m", container_name='localization-api', debug=True)
 
     def decrease_resources(self):
         cpu_limit, memory_limit = self.node.get_container_limits(self.container_id)
         updated_cpu_limit = int(max(cpu_limit - self.INCREMENT, self.MIN_CPU_LIMIT))
-
+        self.ALLOCATED = updated_cpu_limit
         patch_pod(f'localization-api{self.id}', cpu_request=f"{updated_cpu_limit}m", cpu_limit=f"{updated_cpu_limit}m", container_name='localization-api', debug=True)
 
     '''

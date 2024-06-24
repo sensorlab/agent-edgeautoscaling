@@ -1,0 +1,13 @@
+from train_ddpg import DDPGagent
+from continous_env import ContinousElasticityEnv
+
+env = ContinousElasticityEnv(1, 1)
+agent = DDPGagent(env)
+agent.load_model('actor.pth', 'critic.pth')
+
+state = env.reset()
+while True:
+    action = agent.get_action(state)
+    state, reward, done, _ = env.step(action)
+    if done:
+        break
