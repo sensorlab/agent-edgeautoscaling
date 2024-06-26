@@ -16,14 +16,11 @@ class ContinousElasticityEnv(ElastisityEnv):
         resource_penalty = 0
         new_resource_limit = int(max(action[0] * self.MAX_CPU_LIMIT, self.MIN_CPU_LIMIT))
 
-        # If the new resource limit is greater than the available resources, set it to the maximum available
-        # and give some penalty for overshooting
-        if new_resource_limit > self.AVAILABLE:
+        if new_resource_limit > self.ALLOCATED and new_resource_limit - self.ALLOCATED > self.AVAILABLE:
             resource_penalty = 0.5
-            new_resource_limit = self.ALLOCATED + self.AVAILABLE
-            self.ALLOCATED = new_resource_limit
-            patch_pod(f'localization-api{self.id}', cpu_request=f"{new_resource_limit}m", cpu_limit=f"{new_resource_limit}m", container_name='localization-api', debug=True)
         else:
+            if self.AVAILABLE < 0:
+                resource_penalty = 1
             self.ALLOCATED = new_resource_limit
             patch_pod(f'localization-api{self.id}', cpu_request=f"{new_resource_limit}m", cpu_limit=f"{new_resource_limit}m", container_name='localization-api', debug=True)
 

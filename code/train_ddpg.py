@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from collections import deque
 from tqdm import tqdm
+import argparse
 
 import torch
 import torch.nn as nn
@@ -225,23 +226,40 @@ def set_available_resource(envs, initial_resources):
 
 
 if __name__ == "__main__":
-    LOAD_WEIGHTS = False
-    SAVE_WEIGHTS = True
-    RESOURCES = 1000
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--episodes', type=int, default=300)
+    parser.add_argument('--init_resources', type=int, default=1000)
+    parser.add_argument('--alpha', type=float, default=0.75, help="Weight for the shared reward, higher the more weight to latency, lower the more weight to efficiency")
+    parser.add_argument('--n_agents', type=int, default=3)
+    parser.add_argument('--rps', type=int, default=50, help="Requests per second for loading cluster")
+    parser.add_argument('--interval', type=int, default=1000, help="Milliseconds interval for requests")
+    parser.add_argument('--batch_size', type=int, default=64, help="Batch size for training")
+    
+    parser.add_argument('--random_rps', action='store_true', default=False, help="Train on random requests every episode")
+    parser.add_argument('--load_weights', action='store_true', default=False, help="Load weights from previous training")
+    parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
+    parser.add_argument('--variable_resources', action='store_true', default=False, help="Random resources every 10 episodes")
+    args = parser.parse_args()
+
+    SAVE_WEIGHTS = True # Always save weightsB)
+    LOAD_WEIGHTS = args.load_weights
+    RESOURCES = args.init_resources
+    alpha = args.alpha
+    episodes = args.episodes
+    variable_resources = args.variable_resources
+    interval = args.interval
+    randomize_reqs = args.random_rps
+    reqs_per_second = args.rps
+    n_agents = args.n_agents
+    bs = args.batch_size
+    debug = args.debug
+
     url = f"http://localhost:30888/predict"
     USERS = 10
-    alpha = 0.7
-    episodes = 1000
 
-    reqs_per_second = 50
-    randomize_reqs = True
-    interval = 1000
-
-    n_agents = 3
     envs = [ContinousElasticityEnv(i, n_agents) for i in range(1, n_agents + 1)]
     agents = [DDPGagent(env) for env in envs]
     noises = [OUNoise(env.action_space, max_sigma=0.4, min_sigma=0.15, decay_period=50000) for env in envs]
-    bs = 64
 
     parent_dir = 'code/model_metric_data/ddpg'
     MODEL = f'{episodes}ep{RESOURCES}resources{reqs_per_second}rps{interval}interval{alpha}alpha'
@@ -258,13 +276,10 @@ if __name__ == "__main__":
     set_available_resource(envs, RESOURCES)
     set_container_cpu_values(100)
 
-    # Enable debug
-    for env in envs:
-        env.DEBUG = False
-
     for episode in tqdm(range(episodes)):
         random_rps = np.random.randint(5, reqs_per_second) if randomize_reqs else reqs_per_second
         spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval)])
+        print(f"Loading cluster with {random_rps} requests per second")
         
         states = [np.array(env.reset()).flatten() for env in envs]
         [noise.reset() for noise in noises]
@@ -300,6 +315,8 @@ if __name__ == "__main__":
                 if len(agents[i].memory) > bs:
                     agents[i].update(bs)
                 agents_step_rewards.append(reward)
+                if debug:
+                    print(f"Agent {env.id}, ACTION: {actions[i]}, LIMIT: {env.ALLOCATED}, AVAILABLE: {env.AVAILABLE}, reward: {reward} state(limit, usage, others): {env.state[-1]}")
             
             if step % 30 == 0 and step != 0:
                 print(f"Shared: {agents_step_rewards}, latency: {latency}")
