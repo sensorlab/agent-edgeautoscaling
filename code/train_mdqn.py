@@ -232,6 +232,8 @@ if __name__ == '__main__':
     suffixes = ['_double' if double else '', '_dueling' if dueling else '', '_varres' if variable_resources else '']
     MODEL += ''.join(suffixes)
 
+    print(f"Initialized model {MODEL}, random_rps {randomize_reqs}, variable_resoruces {variable_resources}, interval {interval} ms, rps {reqs_per_second}")
+
     os.makedirs(f'code/model_metric_data/{MODEL}', exist_ok=True)
 
     n_agents = args.n_agents
@@ -359,8 +361,8 @@ if __name__ == '__main__':
                 target_net.load_state_dict(target_net_state_dict)
 
             if any(dones):
-                for env in envs:
-                    env.save_last_limit()
+                # for env in envs:
+                #     env.save_last_limit()
                 break
         
         mean_latencies.append(np.mean(ep_latencies))

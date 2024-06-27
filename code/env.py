@@ -1,7 +1,7 @@
 from gymnasium import Env, spaces
 
 from utils import init_nodes
-from pod_controller import get_loadbalancer_external_port, patch_pod
+from pod_controller import patch_pod
 
 class ElastisityEnv(Env):
     def __init__(self, id, n_agents):
@@ -33,7 +33,7 @@ class ElastisityEnv(Env):
         self.state = self.get_current_usage()
 
         self.steps = 0
-        self.MAX_STEPS = 50
+        self.MAX_STEPS = 60
 
         # 30% - 60%
         self.UPPER_CPU = 60
@@ -83,7 +83,7 @@ class ElastisityEnv(Env):
         self.last_cpu_percentage = cpu_percentage
         n_cpu_limit, n_cpu = self.normalize_cpu_usage(cpu_limit), self.normalize_cpu_usage(cpu)
 
-        self.ALLOCATED = cpu_limit # used from outerscope for resource deviation
+        self.ALLOCATED = int(cpu_limit) # used from outerscope for resource deviation
         available_normed = self.AVAILABLE / self.MAX_CPU_LIMIT
         # state = [n_cpu_limit, n_cpu, (cpu_percentage / 100), self.normalize_cpu_usage(self.ALLOCATED), available_normed]
         # state = [n_cpu_limit, n_cpu, (cpu_percentage / 100), self.normalize_cpu_usage(self.AVAILABLE)]
@@ -107,28 +107,12 @@ class ElastisityEnv(Env):
         self.ALLOCATED = updated_cpu_limit
         patch_pod(f'localization-api{self.id}', cpu_request=f"{updated_cpu_limit}m", cpu_limit=f"{updated_cpu_limit}m", container_name='localization-api', debug=True)
 
-    '''
-    def calculate_latency(self, num_requests):
-        url = f"http://localhost:{self.loadbalancer_port}/predict"
-        latencies = []
-        for _ in range(num_requests):
-            data = {
-                "feature": random.randint(0, 130)
-            }
-            latency = make_request(url, data)
-            if latency:
-                latencies.append(latency)
-        a = np.array(latencies)
-        # return a.prod()**(1.0/len(a))
-        return a.mean() if len(a) > 0 else 0
-    '''
-
     def save_last_limit(self):
         (cpu_limit, cpu, cpu_percentage), (memory_limit, memory, memory_percentage), (rx, tx) = self.node.get_container_usage(self.container_id)
         self.last_cpu_limit = int(cpu_limit)
     
     def set_last_limit(self):
-        self.ALLOCATED = self.last_cpu_limit
-        patch_pod(f'localization-api{self.id}', cpu_request=f"{self.last_cpu_limit}m", cpu_limit=f"{self.last_cpu_limit}m", container_name='localization-api', debug=True)
+        # self.ALLOCATED = self.last_cpu_limit
+        patch_pod(f'localization-api{self.id}', cpu_request=f"{self.ALLOCATED}m", cpu_limit=f"{self.ALLOCATED}m", container_name='localization-api', debug=True)
         # print(f"Set last limit to {self.last_cpu_limit} for agent {self.id} and pod localization-api{self.id}")
 

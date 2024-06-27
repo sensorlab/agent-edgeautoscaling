@@ -130,13 +130,13 @@ class Actor(nn.Module):
         """
         x = F.relu(self.linear1(state))
         x = F.relu(self.linear2(x))
-        x = torch.tanh(self.linear3(x))
+        x = torch.sigmoid(self.linear3(x))
 
         return x
 
 
 class DDPGagent():
-    def __init__(self, env, hidden_size=256, actor_learning_rate=1e-4, critic_learning_rate=1e-3, gamma=0.99, tau=1e-2,
+    def __init__(self, env, hidden_size=256, actor_learning_rate=3e-4, critic_learning_rate=1e-3, gamma=0.99, tau=1e-2,
                  max_memory_size=50000):
         # Params
         self.num_states = env.observation_space.shape[0]
@@ -159,8 +159,8 @@ class DDPGagent():
         # Training
         self.memory = Memory(max_memory_size)
         self.critic_criterion = nn.MSELoss()
-        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_learning_rate)
-        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=critic_learning_rate)
+        self.actor_optimizer = optim.AdamW(self.actor.parameters(), lr=actor_learning_rate, weight_decay=1e-5)
+        self.critic_optimizer = optim.AdamW(self.critic.parameters(), lr=critic_learning_rate, weight_decay=1e-5)
 
     def get_action(self, state):
         state = Variable(torch.from_numpy(state).float().unsqueeze(0))
@@ -207,8 +207,8 @@ class DDPGagent():
         self.critic.load_state_dict(torch.load(critic_path))
     
     def save_model(self, path):
-        torch.save(self.actor.state_dict(), path + "_actor")
-        torch.save(self.critic.state_dict(), path + "_critic")
+        torch.save(self.actor.state_dict(), path + "_actor.pth")
+        torch.save(self.critic.state_dict(), path + "_critic.pth")
 
 
 def describe_env(env):
@@ -258,15 +258,19 @@ if __name__ == "__main__":
     USERS = 10
 
     envs = [ContinousElasticityEnv(i, n_agents) for i in range(1, n_agents + 1)]
-    agents = [DDPGagent(env) for env in envs]
-    noises = [OUNoise(env.action_space, max_sigma=0.4, min_sigma=0.15, decay_period=50000) for env in envs]
+    agents = [DDPGagent(env, hidden_size=64) for env in envs]
+    decay_period = envs[0].MAX_STEPS * episodes # Makes sense for now
+    noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]
+    # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=1250) for env in envs]
 
     parent_dir = 'code/model_metric_data/ddpg'
     MODEL = f'{episodes}ep{RESOURCES}resources{reqs_per_second}rps{interval}interval{alpha}alpha'
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
     if LOAD_WEIGHTS:
-        [agent.load_model(f"{parent_dir}/{MODEL}/agent_{i}_actor", f"{parent_dir}/{MODEL}/agent_{i}_critic") for i, agent in enumerate(agents)]
+        [agent.load_model(f"{parent_dir}/{MODEL}/agent_{i}_actor.pth", f"{parent_dir}/{MODEL}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
         print("Successfully loaded weights")
+
+    print(f"Training {n_agents} agents for {episodes} episodes with {RESOURCES} resources, {reqs_per_second} requests per second, {interval} ms interval, {alpha} alpha, {bs} batch size\nModel name {MODEL}, OUNoise decay period {decay_period}\n")
 
     rewards = []
     avg_rewards = []
@@ -327,8 +331,8 @@ if __name__ == "__main__":
             ep_rewards.append(np.mean(agents_step_rewards))
 
             if any(dones):
-                for env in envs:
-                    env.save_last_limit()
+                # for env in envs:
+                #     env.save_last_limit()
                 break
 
             states = new_states
@@ -350,9 +354,8 @@ if __name__ == "__main__":
         for env in envs:
             env.set_last_limit()
         
-        print(f"Episode {episode} reward: {rewards[-1]} mean latency: {np.mean(mean_latencies)}")
+        print(f"Episode {episode} reward: {rewards[-1]} mean latency: {np.mean(ep_latencies)}")
 
-    
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):
             agent.save_model(f"{parent_dir}/{MODEL}/agent_{i}")
