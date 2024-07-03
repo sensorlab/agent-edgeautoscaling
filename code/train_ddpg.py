@@ -102,8 +102,10 @@ class Critic(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(Critic, self).__init__()
         self.linear1 = nn.Linear(input_size, hidden_size)
-        self.linear2 = nn.Linear(hidden_size, hidden_size)
-        self.linear3 = nn.Linear(hidden_size, output_size)
+        self.linear2 = nn.Linear(hidden_size, hidden_size * 2)
+        self.linear3 = nn.Linear(hidden_size * 2, hidden_size * 2)
+        self.linear4 = nn.Linear(hidden_size * 2, hidden_size)
+        self.linear5 = nn.Linear(hidden_size, output_size)
 
     def forward(self, state, action):
         """
@@ -112,8 +114,9 @@ class Critic(nn.Module):
         x = torch.cat([state, action], 1)
         x = F.relu(self.linear1(x))
         x = F.relu(self.linear2(x))
-        x = self.linear3(x)
-
+        x = F.relu(self.linear3(x))
+        x = F.relu(self.linear4(x))
+        x = self.linear5(x)
         return x
 
 
@@ -121,8 +124,10 @@ class Actor(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, learning_rate=3e-4):
         super(Actor, self).__init__()
         self.linear1 = nn.Linear(input_size, hidden_size)
-        self.linear2 = nn.Linear(hidden_size, hidden_size)
-        self.linear3 = nn.Linear(hidden_size, output_size)
+        self.linear2 = nn.Linear(hidden_size, hidden_size * 2)
+        self.linear3 = nn.Linear(hidden_size * 2, hidden_size * 2)
+        self.linear4 = nn.Linear(hidden_size * 2, hidden_size)
+        self.linear5 = nn.Linear(hidden_size, output_size)
 
     def forward(self, state):
         """
@@ -130,8 +135,9 @@ class Actor(nn.Module):
         """
         x = F.relu(self.linear1(state))
         x = F.relu(self.linear2(x))
-        x = torch.sigmoid(self.linear3(x))
-
+        x = F.relu(self.linear3(x))
+        x = F.relu(self.linear4(x))
+        x = torch.tanh(self.linear5(x))
         return x
 
 
@@ -232,9 +238,12 @@ if __name__ == "__main__":
     parser.add_argument('--alpha', type=float, default=0.75, help="Weight for the shared reward, higher the more weight to latency, lower the more weight to efficiency")
     parser.add_argument('--n_agents', type=int, default=3)
     parser.add_argument('--rps', type=int, default=50, help="Requests per second for loading cluster")
+    parser.add_argument('--min_rps', type=int, default=10, help="Minimum Requests per second for loading cluster, if the random requests are enabled")
     parser.add_argument('--interval', type=int, default=1000, help="Milliseconds interval for requests")
     parser.add_argument('--batch_size', type=int, default=64, help="Batch size for training")
-    
+    parser.add_argument('--gamma_latency', type=float, default=0.5, help="Latency normalization")
+    parser.add_argument('--scale_action', type=int, default=50, help="How much does the agent scale with an action")
+
     parser.add_argument('--random_rps', action='store_true', default=False, help="Train on random requests every episode")
     parser.add_argument('--load_weights', action='store_true', default=False, help="Load weights from previous training")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
@@ -253,22 +262,30 @@ if __name__ == "__main__":
     n_agents = args.n_agents
     bs = args.batch_size
     debug = args.debug
+    gamma_latency = args.gamma_latency
+    scale_action = args.scale_action
+    min_rps = args.min_rps
 
     url = f"http://localhost:30888/predict"
     USERS = 10
 
     envs = [ContinousElasticityEnv(i, n_agents) for i in range(1, n_agents + 1)]
-    agents = [DDPGagent(env, hidden_size=64) for env in envs]
-    decay_period = envs[0].MAX_STEPS * episodes # Makes sense for now
-    noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]
+    for env in envs:
+        env.MAX_CPU_LIMIT = RESOURCES
+        env.DEBUG = False
+        env.scale_action = scale_action
+    agents = [DDPGagent(env, hidden_size=64, max_memory_size=60000) for env in envs]
+    decay_period = envs[0].MAX_STEPS * episodes / 1.1 # Makes sense for now
+    # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]
+    noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0, decay_period=decay_period) for env in envs]
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=1250) for env in envs]
 
     parent_dir = 'code/model_metric_data/ddpg'
-    MODEL = f'{episodes}ep{RESOURCES}resources{reqs_per_second}rps{interval}interval{alpha}alpha'
+    MODEL = f'{episodes}ep{RESOURCES}resources{reqs_per_second}rps{interval}interval{alpha}alpha{scale_action}scale_a{gamma_latency}gl'
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
     if LOAD_WEIGHTS:
         [agent.load_model(f"{parent_dir}/{MODEL}/agent_{i}_actor.pth", f"{parent_dir}/{MODEL}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
-        print("Successfully loaded weights")
+        print(f"Successfully loaded weights from {parent_dir}/{MODEL}")
 
     print(f"Training {n_agents} agents for {episodes} episodes with {RESOURCES} resources, {reqs_per_second} requests per second, {interval} ms interval, {alpha} alpha, {bs} batch size\nModel name {MODEL}, OUNoise decay period {decay_period}\n")
 
@@ -277,15 +294,17 @@ if __name__ == "__main__":
     mean_latencies = []
     agents_summed_rewards = [[] for _ in range(n_agents)]
 
-    set_available_resource(envs, RESOURCES)
     set_container_cpu_values(100)
+    set_available_resource(envs, RESOURCES)
 
     for episode in tqdm(range(episodes)):
-        random_rps = np.random.randint(5, reqs_per_second) if randomize_reqs else reqs_per_second
+        random_rps = np.random.randint(min_rps, reqs_per_second) if randomize_reqs else reqs_per_second
         spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval)])
         print(f"Loading cluster with {random_rps} requests per second")
         
         states = [np.array(env.reset()).flatten() for env in envs]
+        set_available_resource(envs, RESOURCES)
+
         [noise.reset() for noise in noises]
 
         ep_latencies = []
@@ -299,7 +318,8 @@ if __name__ == "__main__":
             latencies = spam_requests_single(USERS, url)
             latency = np.mean([latency for latency in latencies if latency is not None])
             ep_latencies.append(latency)
-            
+            latency = min(latency, gamma_latency)
+
             actions, new_states, dones = [], [], []
             for i, agent in enumerate(agents):
                 state = states[i]
@@ -311,7 +331,11 @@ if __name__ == "__main__":
                 new_state, reward, done, _ = env.step(actions[i])
                 new_state = np.array(new_state).flatten()
                 set_available_resource(envs, RESOURCES)
-                reward = alpha * reward + (1 - alpha) * (1 - latency * 10)
+
+                # reward = alpha * reward + (1 - alpha) * (1 - latency * 10)
+                shared_reward = (gamma_latency - latency) / gamma_latency
+                reward = alpha * reward + (1 - alpha) * shared_reward
+
                 agents[i].memory.push(states[i], actions[i], reward, new_state, done)
                 new_states.append(new_state)
                 agents_ep_reward[i].append(reward)
@@ -320,7 +344,9 @@ if __name__ == "__main__":
                     agents[i].update(bs)
                 agents_step_rewards.append(reward)
                 if debug:
-                    print(f"Agent {env.id}, ACTION: {actions[i]}, LIMIT: {env.ALLOCATED}, AVAILABLE: {env.AVAILABLE}, reward: {reward} state(limit, usage, others): {env.state[-1]}")
+                    print(f"Agent {env.id}, ACTION: {actions[i]}, LIMIT: {env.ALLOCATED}, AVAILABLE: {env.AVAILABLE}, reward: {reward} state(limit, usage, others): {env.state[-1]}, shared_reward: {shared_reward}, agent_reward: {reward}")
+            if debug:
+                print()
             
             if step % 30 == 0 and step != 0:
                 print(f"Shared: {agents_step_rewards}, latency: {latency}")
@@ -351,8 +377,8 @@ if __name__ == "__main__":
                 else:
                     break
         
-        for env in envs:
-            env.set_last_limit()
+        # for env in envs:
+        #     env.set_last_limit()
         
         print(f"Episode {episode} reward: {rewards[-1]} mean latency: {np.mean(ep_latencies)}")
 
