@@ -243,15 +243,16 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=64, help="Batch size for training")
     parser.add_argument('--gamma_latency', type=float, default=0.5, help="Latency normalization")
     parser.add_argument('--scale_action', type=int, default=50, help="How much does the agent scale with an action")
+    parser.add_argument('--load_weights', type=str, default=False, help="Load weights from previous training with a string of the model parent directory")
 
+    parser.add_argument('--make_checkpoints', action='store_true', default=False, help="Save weights every 5 episodes")
     parser.add_argument('--random_rps', action='store_true', default=False, help="Train on random requests every episode")
-    parser.add_argument('--load_weights', action='store_true', default=False, help="Load weights from previous training")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
     parser.add_argument('--variable_resources', action='store_true', default=False, help="Random resources every 10 episodes")
     args = parser.parse_args()
 
     SAVE_WEIGHTS = True # Always save weightsB)
-    LOAD_WEIGHTS = args.load_weights
+    weights_dir = args.load_weights
     RESOURCES = args.init_resources
     alpha = args.alpha
     episodes = args.episodes
@@ -265,6 +266,7 @@ if __name__ == "__main__":
     gamma_latency = args.gamma_latency
     scale_action = args.scale_action
     min_rps = args.min_rps
+    make_checkpoints = args.make_checkpoints
 
     url = f"http://localhost:30888/predict"
     USERS = 10
@@ -282,10 +284,11 @@ if __name__ == "__main__":
 
     parent_dir = 'code/model_metric_data/ddpg'
     MODEL = f'{episodes}ep{RESOURCES}resources{reqs_per_second}rps{interval}interval{alpha}alpha{scale_action}scale_a{gamma_latency}gl'
+    if weights_dir:
+        [agent.load_model(f"{parent_dir}/{weights_dir}/agent_{i}_actor.pth", f"{parent_dir}/{weights_dir}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
+        print(f"Successfully loaded weights from {parent_dir}/{weights_dir}")
+        MODEL += "_pretrained"
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
-    if LOAD_WEIGHTS:
-        [agent.load_model(f"{parent_dir}/{MODEL}/agent_{i}_actor.pth", f"{parent_dir}/{MODEL}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
-        print(f"Successfully loaded weights from {parent_dir}/{MODEL}")
 
     print(f"Training {n_agents} agents for {episodes} episodes with {RESOURCES} resources, {reqs_per_second} requests per second, {interval} ms interval, {alpha} alpha, {bs} batch size\nModel name {MODEL}, OUNoise decay period {decay_period}\n")
 
@@ -298,6 +301,11 @@ if __name__ == "__main__":
     set_available_resource(envs, RESOURCES)
 
     for episode in tqdm(range(episodes)):
+        # Checkpoint
+        if episode % 5 == 0 and episode != 0 and make_checkpoints:
+            for i, agent in enumerate(agents):
+                agent.save_model(f"{parent_dir}/{MODEL}/agent_{i}")
+
         random_rps = np.random.randint(min_rps, reqs_per_second) if randomize_reqs else reqs_per_second
         spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval)])
         print(f"Loading cluster with {random_rps} requests per second")
