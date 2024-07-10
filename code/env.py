@@ -3,6 +3,8 @@ from gymnasium import Env, spaces
 from utils import init_nodes
 from pod_controller import patch_pod
 
+
+# todo: add label for different applications
 class ElastisityEnv(Env):
     def __init__(self, id, n_agents):
         super().__init__()
@@ -76,14 +78,14 @@ class ElastisityEnv(Env):
         return self.state
 
     def normalize_cpu_usage(self, cpu_usage):
-        return cpu_usage / (self.MAX_CPU_LIMIT - self.MIN_CPU_LIMIT * self.n_agents)
+        return cpu_usage / self.MAX_CPU_LIMIT
 
     def get_current_usage(self):
         (cpu_limit, cpu, cpu_percentage), (memory_limit, memory, memory_percentage), (rx, tx) = self.node.get_container_usage(self.container_id)
         self.last_cpu_percentage = cpu_percentage
         n_cpu_limit, n_cpu = self.normalize_cpu_usage(cpu_limit), self.normalize_cpu_usage(cpu)
 
-        self.ALLOCATED = int(cpu_limit) # used from outerscope for resource deviation
+        # self.ALLOCATED = int(cpu_limit) # used from outerscope for resource deviation
         available_normed = self.AVAILABLE / self.MAX_CPU_LIMIT
         # state = [n_cpu_limit, n_cpu, (cpu_percentage / 100), self.normalize_cpu_usage(self.ALLOCATED), available_normed]
         # state = [n_cpu_limit, n_cpu, (cpu_percentage / 100), self.normalize_cpu_usage(self.AVAILABLE)]
@@ -116,3 +118,9 @@ class ElastisityEnv(Env):
         patch_pod(f'localization-api{self.id}', cpu_request=f"{self.ALLOCATED}m", cpu_limit=f"{self.ALLOCATED}m", container_name='localization-api', debug=True)
         # print(f"Set last limit to {self.last_cpu_limit} for agent {self.id} and pod localization-api{self.id}")
 
+    def patch(self, limit):
+        patch_pod(f'localization-api{self.id}', cpu_request=f"{limit}m", cpu_limit=f"{limit}m", container_name='localization-api', debug=True)
+        self.ALLOCATED = limit
+
+    def get_container_usage(self):
+        return self.node.get_container_usage(self.container_id)

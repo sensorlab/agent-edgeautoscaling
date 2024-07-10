@@ -336,7 +336,7 @@ if __name__ == '__main__':
             if t % 25 == 0 and t != 0:
                 print(f"SharedR A*r+B*L: {shared_rewards}, reward_part: {rewards}, latency_part: {latency}, resource deviation: {resource_std_dev}. Step: {t}")
                 for env in envs:
-                    print(f"Agent {env.id}: {env.last_cpu_percentage} % CPU, {env.AVAILABLE} available CPU", end=" ")
+                    print(f"Agent {env.id}: {env.last_cpu_percentage} % CPU, AVAILABLE: {env.AVAILABLE}", end=" ")
                 print()
 
             [agents_ep_reward[i].append(shared_rewards[i]) for i in range(n_agents)]

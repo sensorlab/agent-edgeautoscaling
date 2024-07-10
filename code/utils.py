@@ -4,6 +4,7 @@ import time
 import requests
 import json
 from kubernetes import client, config
+import numpy as np
 
 from node import Node
 
@@ -64,3 +65,9 @@ def load_config():
     with open('code/application_config.yaml', 'r') as f:
         config = yaml.safe_load(f)
     return config
+
+def calculate_dynamic_rps(episode, reqs_per_second, min_rps, max_limit_rps=100, scale_factor=0.005, randomize_reqs=True):
+    dynamic_max_rps = int(reqs_per_second + episode * scale_factor * reqs_per_second)
+    dynamic_max_rps = min(dynamic_max_rps, max_limit_rps)
+    random_rps = np.random.randint(min_rps, dynamic_max_rps) if randomize_reqs else reqs_per_second
+    return dynamic_max_rps, random_rps

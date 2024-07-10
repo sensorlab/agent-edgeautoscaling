@@ -1,6 +1,7 @@
 from continous_env import ContinousElasticityEnv
 from spam_cluster import spam_requests_single
 from pod_controller import set_container_cpu_values
+from utils import calculate_dynamic_rps
 
 import os
 import subprocess
@@ -234,10 +235,10 @@ def set_available_resource(envs, initial_resources):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--episodes', type=int, default=300)
-    parser.add_argument('--init_resources', type=int, default=1000)
+    parser.add_argument('--init_resources', type=int, default=1000, help="Cpu resoruces given to the cluster")
     parser.add_argument('--alpha', type=float, default=0.75, help="Weight for the shared reward, higher the more weight to latency, lower the more weight to efficiency")
     parser.add_argument('--n_agents', type=int, default=3)
-    parser.add_argument('--rps', type=int, default=50, help="Requests per second for loading cluster")
+    parser.add_argument('--rps', type=int, default=50, help="Baseline bound of requests per second for loading cluster, if random, it is the upper bound")
     parser.add_argument('--min_rps', type=int, default=10, help="Minimum Requests per second for loading cluster, if the random requests are enabled")
     parser.add_argument('--interval', type=int, default=1000, help="Milliseconds interval for requests")
     parser.add_argument('--batch_size', type=int, default=64, help="Batch size for training")
@@ -279,13 +280,14 @@ if __name__ == "__main__":
     agents = [DDPGagent(env, hidden_size=64, max_memory_size=60000) for env in envs]
     decay_period = envs[0].MAX_STEPS * episodes / 1.1 # Makes sense for now
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]
-    noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0, decay_period=decay_period) for env in envs]
+    # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0, decay_period=decay_period) for env in envs]
+    noises = [OUNoise(env.action_space, max_sigma=0.07, min_sigma=0, decay_period=decay_period) for env in envs]
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=1250) for env in envs]
 
     parent_dir = 'code/model_metric_data/ddpg'
     MODEL = f'{episodes}ep{RESOURCES}resources{reqs_per_second}rps{interval}interval{alpha}alpha{scale_action}scale_a{gamma_latency}gl'
     if weights_dir:
-        [agent.load_model(f"{parent_dir}/{weights_dir}/agent_{i}_actor.pth", f"{parent_dir}/{weights_dir}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
+        [agent.load_model(f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_actor.pth", f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
         print(f"Successfully loaded weights from {parent_dir}/{weights_dir}")
         MODEL += "_pretrained"
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
@@ -305,8 +307,14 @@ if __name__ == "__main__":
         if episode % 5 == 0 and episode != 0 and make_checkpoints:
             for i, agent in enumerate(agents):
                 agent.save_model(f"{parent_dir}/{MODEL}/agent_{i}")
+            print(f"Checkpoint saved at episode {episode} for {n_agents} agents")
 
         random_rps = np.random.randint(min_rps, reqs_per_second) if randomize_reqs else reqs_per_second
+        
+        # Stick to finetuning, this doesnt work
+        # Faster training times, unoptimized agents can train slow when the cluster is loaded too heavily
+        # _, random_rps = calculate_dynamic_rps(episode, reqs_per_second, min_rps, scale_factor=0.005, randomize_reqs=randomize_reqs, max_limit_rps=100)
+
         spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval)])
         print(f"Loading cluster with {random_rps} requests per second")
         
@@ -326,8 +334,10 @@ if __name__ == "__main__":
             latencies = spam_requests_single(USERS, url)
             latency = np.mean([latency for latency in latencies if latency is not None])
             ep_latencies.append(latency)
-            latency = min(latency, gamma_latency)
 
+            shared_reward = 1 - latency * 10
+            # latency = min(latency, gamma_latency)
+            # shared_reward = (gamma_latency - latency) / gamma_latency
             actions, new_states, dones = [], [], []
             for i, agent in enumerate(agents):
                 state = states[i]
@@ -340,8 +350,6 @@ if __name__ == "__main__":
                 new_state = np.array(new_state).flatten()
                 set_available_resource(envs, RESOURCES)
 
-                # reward = alpha * reward + (1 - alpha) * (1 - latency * 10)
-                shared_reward = (gamma_latency - latency) / gamma_latency
                 reward = alpha * reward + (1 - alpha) * shared_reward
 
                 agents[i].memory.push(states[i], actions[i], reward, new_state, done)
@@ -355,11 +363,13 @@ if __name__ == "__main__":
                     print(f"Agent {env.id}, ACTION: {actions[i]}, LIMIT: {env.ALLOCATED}, AVAILABLE: {env.AVAILABLE}, reward: {reward} state(limit, usage, others): {env.state[-1]}, shared_reward: {shared_reward}, agent_reward: {reward}")
             if debug:
                 print()
+
+            states = new_states
             
             if step % 30 == 0 and step != 0:
                 print(f"Shared: {agents_step_rewards}, latency: {latency}")
                 for env in envs:
-                    print(f"Agent {env.id}: {env.last_cpu_percentage} % CPU, {env.AVAILABLE} available CPU", end=" ")
+                    print(f"Agent {env.id}: {env.last_cpu_percentage} % CPU, AVAILABLE: {env.AVAILABLE}", end=". ")
                 print()
 
             ep_rewards.append(np.mean(agents_step_rewards))
@@ -368,8 +378,6 @@ if __name__ == "__main__":
                 # for env in envs:
                 #     env.save_last_limit()
                 break
-
-            states = new_states
         
         mean_latencies.append(np.mean(ep_latencies))
         rewards.append(sum(ep_rewards))
@@ -385,8 +393,8 @@ if __name__ == "__main__":
                 else:
                     break
         
-        # for env in envs:
-        #     env.set_last_limit()
+        for env in envs:
+            env.set_last_limit()
         
         print(f"Episode {episode} reward: {rewards[-1]} mean latency: {np.mean(ep_latencies)}")
 
