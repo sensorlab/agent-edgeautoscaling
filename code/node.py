@@ -76,7 +76,9 @@ class Node:
 
                 network_rx_per_second_mb, network_tx_per_second_mb = self.get_throughput(time_interval_seconds)
 
-                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (memory_limit_bytes / (1024 * 1024), memory_usage_megabytes, memory_usage_percentage), (network_rx_per_second_mb, network_tx_per_second_mb)
+                throttled = container['stats'][-1]['cpu']['cfs']['throttled_time'] > container['stats'][-3]['cpu']['cfs']['throttled_time']
+
+                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (memory_limit_bytes / (1024 * 1024), memory_usage_megabytes, memory_usage_percentage), (network_rx_per_second_mb, network_tx_per_second_mb), throttled 
             else:
                 print(f"Container {container_id} not found")
                 return (0, 0, 0), (0, 0, 0), (0, 0), (0, 0)

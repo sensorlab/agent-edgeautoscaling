@@ -1,3 +1,5 @@
+import numpy as np
+
 from gymnasium import Env, spaces
 
 from utils import init_nodes
@@ -30,8 +32,10 @@ class ElastisityEnv(Env):
                     self.node = node
                     break
 
+        self.other_avg_util = 0.0
+
         self.STATE_LENTGH = 6
-        self.states_fifo = [[0, 0, 0] for _ in range(self.STATE_LENTGH)]
+        self.states_fifo = [[0, 0, 0, False, 0] for _ in range(self.STATE_LENTGH)] # init state
         self.state = self.get_current_usage()
 
         self.steps = 0
@@ -81,7 +85,7 @@ class ElastisityEnv(Env):
         return cpu_usage / self.MAX_CPU_LIMIT
 
     def get_current_usage(self):
-        (cpu_limit, cpu, cpu_percentage), (memory_limit, memory, memory_percentage), (rx, tx) = self.node.get_container_usage(self.container_id)
+        (cpu_limit, cpu, cpu_percentage), (memory_limit, memory, memory_percentage), (rx, tx), throttled = self.node.get_container_usage(self.container_id)
         self.last_cpu_percentage = cpu_percentage
         n_cpu_limit, n_cpu = self.normalize_cpu_usage(cpu_limit), self.normalize_cpu_usage(cpu)
 
@@ -89,7 +93,7 @@ class ElastisityEnv(Env):
         available_normed = self.AVAILABLE / self.MAX_CPU_LIMIT
         # state = [n_cpu_limit, n_cpu, (cpu_percentage / 100), self.normalize_cpu_usage(self.ALLOCATED), available_normed]
         # state = [n_cpu_limit, n_cpu, (cpu_percentage / 100), self.normalize_cpu_usage(self.AVAILABLE)]
-        state = [n_cpu_limit, n_cpu, available_normed]
+        state = [n_cpu_limit, n_cpu, available_normed, throttled, self.other_avg_util / 100]
 
         self.states_fifo.append(state)
         self.states_fifo.pop(0)
