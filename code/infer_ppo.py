@@ -5,15 +5,14 @@ import numpy as np
 import time
 
 n_agents = 3
-envs = [ContinousElasticityEnv(i, n_agents) for i in range(1, n_agents + 1)]
-state_dim = envs[0].observation_space.shape[0]
-action_dim = envs[0].action_space.shape[0]
 initial_action_std = 1e-7
-agents = [PPO(state_dim, action_dim, has_continuous_action_space=True, action_std_init=initial_action_std) for _ in envs]
+
+envs = [ContinousElasticityEnv(i, n_agents) for i in range(1, n_agents + 1)]
+agents = [PPO(env, has_continuous_action_space=True, action_std_init=initial_action_std) for env in envs]
 print(f"Frist agent action std: {agents[0].action_std}")
 
 RESOURCES = 1000
-model_folder = 'code/model_metric_data/ppo/20ep1000resources50rps1000interval0.75alpha50scale_a0.5gl'
+model_folder = 'code/model_metric_data/ppo/30ep1000resources50rps1000interval0.75alpha50scale_a0.3gl'
 
 for id, agent in enumerate(agents):
     agent.load(f'{model_folder}/agent_{id}.pth')

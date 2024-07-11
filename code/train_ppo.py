@@ -40,7 +40,7 @@ class RolloutBuffer:
 
 
 class ActorCritic(nn.Module):
-    def __init__(self, state_dim, action_dim, has_continuous_action_space, action_std_init):
+    def __init__(self, state_dim, action_dim, has_continuous_action_space, action_std_init, hidden_size=64):
         super(ActorCritic, self).__init__()
 
         self.has_continuous_action_space = has_continuous_action_space
@@ -51,32 +51,45 @@ class ActorCritic(nn.Module):
 
         if has_continuous_action_space :
             self.actor = nn.Sequential(
-                            nn.Linear(state_dim, 64),
-                            nn.Tanh(),
-                            nn.Linear(64, 64),
-                            nn.Tanh(),
-                            nn.Linear(64, action_dim),
+                            nn.Linear(state_dim, hidden_size),
+                            nn.ReLU(),
+                            nn.Linear(hidden_size, hidden_size * 2),
+                            nn.ReLU(),
+                            nn.Linear(hidden_size * 2, hidden_size * 2),
+                            nn.ReLU(),
+                            nn.Linear(hidden_size * 2, hidden_size),
+                            nn.ReLU(),
+                            nn.Linear(hidden_size, action_dim),
                             nn.Tanh()
                         )
         else:
             self.actor = nn.Sequential(
-                            nn.Linear(state_dim, 64),
-                            nn.Tanh(),
-                            nn.Linear(64, 64),
-                            nn.Tanh(),
-                            nn.Linear(64, action_dim),
+                            nn.Linear(state_dim, hidden_size),
+                            nn.ReLU(),
+                            nn.Linear(hidden_size, hidden_size * 2),
+                            nn.ReLU(),
+                            nn.Linear(hidden_size * 2, hidden_size * 2),
+                            nn.ReLU(),
+                            nn.Linear(hidden_size * 2, hidden_size),
+                            nn.ReLU(),
+                            nn.Linear(hidden_size, action_dim),
                             nn.Softmax(dim=-1)
                         )
 
         
         self.critic = nn.Sequential(
-                        nn.Linear(state_dim, 64),
-                        nn.Tanh(),
-                        nn.Linear(64, 64),
-                        nn.Tanh(),
-                        nn.Linear(64, 1)
+                        nn.Linear(state_dim, hidden_size),
+                        nn.ReLU(),
+                        nn.Linear(hidden_size, hidden_size * 2),
+                        nn.ReLU(),
+                        nn.Linear(hidden_size * 2, hidden_size * 2),
+                        nn.ReLU(),
+                        nn.Linear(hidden_size * 2, hidden_size),
+                        nn.ReLU(),
+                        nn.Linear(hidden_size, 1)
                     )
         
+
     def set_action_std(self, new_action_std):
         if self.has_continuous_action_space:
             self.action_var = torch.full((self.action_dim,), new_action_std * new_action_std).to(device)
@@ -84,7 +97,9 @@ class ActorCritic(nn.Module):
 
     def act(self, state):
         if self.has_continuous_action_space:
+            # Mean of the action distribution
             action_mean = self.actor(state)
+            # Variance of each action dimension
             cov_mat = torch.diag(self.action_var).unsqueeze(dim=0)
             dist = MultivariateNormal(action_mean, cov_mat)
         else:
@@ -95,6 +110,7 @@ class ActorCritic(nn.Module):
         action_logprob = dist.log_prob(action)
         state_val = self.critic(state)
 
+        # Detach creates a new view of the variable that does not require gradients
         return action.detach(), action_logprob.detach(), state_val.detach()
     
 
@@ -108,7 +124,6 @@ class ActorCritic(nn.Module):
             # for single action continuous environments
             if self.action_dim == 1:
                 action = action.reshape(-1, self.action_dim)
-
         else:
             action_probs = self.actor(state)
             dist = Categorical(action_probs)
@@ -121,7 +136,12 @@ class ActorCritic(nn.Module):
 
 
 class PPO:
-    def __init__(self, state_dim, action_dim, has_continuous_action_space, eps_clip=0.2, action_std_init=0.6, lr_actor=0.0003, lr_critic=0.001, gamma=0.99, K_epochs=40):
+    def __init__(self, env, has_continuous_action_space, eps_clip=0.2, action_std_init=0.6, lr_actor=0.0003, lr_critic=0.001, gamma=0.99, K_epochs=40):
+        state_dim = env.observation_space.shape[0]
+        if has_continuous_action_space:
+            action_dim = env.action_space.shape[0]
+        else:
+            action_dim = env.action_space.n
 
         self.has_continuous_action_space = has_continuous_action_space
 
@@ -146,11 +166,11 @@ class PPO:
         self.MseLoss = nn.MSELoss()
 
 
-    def set_action_std(self, new_action_std):
+    def set_action_std(self, action_std):
         if self.has_continuous_action_space:
-            self.action_std = new_action_std
-            self.policy.set_action_std(new_action_std)
-            self.policy_old.set_action_std(new_action_std)
+            self.action_std = action_std
+            self.policy.set_action_std(action_std)
+            self.policy_old.set_action_std(action_std)
         
 
     def decay_action_std(self, action_std_decay_rate, min_action_std):
@@ -163,28 +183,18 @@ class PPO:
 
 
     def select_action(self, state):
+        with torch.no_grad():
+            state = torch.FloatTensor(state).to(device)
+            action, action_logprob, state_val = self.policy_old.act(state)
+
+        self.buffer.states.append(state)
+        self.buffer.actions.append(action)
+        self.buffer.logprobs.append(action_logprob)
+        self.buffer.state_values.append(state_val)
+
         if self.has_continuous_action_space:
-            with torch.no_grad():
-                state = torch.FloatTensor(state).to(device)
-                action, action_logprob, state_val = self.policy_old.act(state)
-
-            self.buffer.states.append(state)
-            self.buffer.actions.append(action)
-            self.buffer.logprobs.append(action_logprob)
-            self.buffer.state_values.append(state_val)
-
             return action.detach().cpu().numpy().flatten()
-
         else:
-            with torch.no_grad():
-                state = torch.FloatTensor(state).to(device)
-                action, action_logprob, state_val = self.policy_old.act(state)
-            
-            self.buffer.states.append(state)
-            self.buffer.actions.append(action)
-            self.buffer.logprobs.append(action_logprob)
-            self.buffer.state_values.append(state_val)
-
             return action.item()
 
 
@@ -202,23 +212,22 @@ class PPO:
         rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
 
-        # convert list to tensor
+        # Convert lists to tensor
         old_states = torch.squeeze(torch.stack(self.buffer.states, dim=0)).detach().to(device)
         old_actions = torch.squeeze(torch.stack(self.buffer.actions, dim=0)).detach().to(device)
         old_logprobs = torch.squeeze(torch.stack(self.buffer.logprobs, dim=0)).detach().to(device)
         old_state_values = torch.squeeze(torch.stack(self.buffer.state_values, dim=0)).detach().to(device)
 
-        # calculate advantages
+        # Calculate advantages
         advantages = rewards.detach() - old_state_values.detach()
         
-
         # Optimize policy for K epochs
         for _ in range(self.K_epochs):
 
             # Evaluating old actions and values
             logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions)
 
-            # match state_values tensor dimensions with rewards tensor
+            # Match state_values tensor dimensions with rewards tensor
             state_values = torch.squeeze(state_values)
             
             # Finding the ratio (pi_theta / pi_theta__old)
@@ -238,10 +247,8 @@ class PPO:
             
         # Copy new weights into old policy
         self.policy_old.load_state_dict(self.policy.state_dict())
-
-        # clear buffer
         self.buffer.clear()
-    
+
     
     def save(self, checkpoint_path):
         torch.save(self.policy_old.state_dict(), checkpoint_path)
@@ -306,41 +313,16 @@ if __name__ == "__main__":
         env.DEBUG = False
         env.scale_action = scale_action
     
-    # PPO custom parameters
-    state_dim = envs[0].observation_space.shape[0]
-    action_dim = envs[0].action_space.shape[0]
-    
-
-    # update_timestep = 150
-    # initial_action_std = 0.6
-    # action_std_decay_rate = 0.075
-    # min_action_std = 1e-7
-    # action_std_decay_freq = 125  # Frequency of decay
-
-    # update_timestep = 2000
-    # initial_action_std = 0.6
-    # action_std_decay_rate = 0.075
-    # min_action_std = 1e-7
-    # action_std_decay_freq = 3000  # Frequency of decay
-
-    # 300 episodes
-    # update_timestep = 250
-    # initial_action_std = 0.6
-    # action_std_decay_rate = 0.065
-    # min_action_std = 1e-7
-    # action_std_decay_freq = 1500 # Frequency of decay
-
-    # 50 episodes
-    update_timestep = 150
+    total_steps = envs[0].MAX_STEPS * episodes
+    update_timestep = envs[0].MAX_STEPS * 2
     initial_action_std = 0.6
     action_std_decay_rate = 0.065
     min_action_std = 1e-7
-    action_std_decay_freq = 250 # Frequency of decay
-    
+    action_std_decay_freq = total_steps // 11 # Frequency of decay
+
     time_step = 0
 
-    agents = [PPO(state_dim, action_dim, has_continuous_action_space=True, action_std_init=initial_action_std) for _ in envs]
-
+    agents = [PPO(env, has_continuous_action_space=True, action_std_init=initial_action_std, K_epochs=30) for env in envs]
 
     parent_dir = 'code/model_metric_data/ppo'
     MODEL = f'{episodes}ep{RESOURCES}resources{reqs_per_second}rps{interval}interval{alpha}alpha{scale_action}scale_a{gamma_latency}gl'
@@ -371,6 +353,12 @@ if __name__ == "__main__":
             for env in envs:
                 env.patch(100)
 
+        if variable_resources and episode % 5 == 0:
+            RESOURCES = random.choice([500, 750, 1000, 1250, 1500, 1750, 2000])
+            for env in envs:
+                env.MAX_CPU_LIMIT = RESOURCES
+            print(f"Resources changed to {RESOURCES} for episode {episode}")
+
         random_rps = np.random.randint(min_rps, reqs_per_second) if randomize_reqs else reqs_per_second
         
         spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval)])
@@ -400,6 +388,9 @@ if __name__ == "__main__":
             for i, agent in enumerate(agents):
                 action = agent.select_action(states[i])
 
+                other_avg_utilization = [env.last_cpu_percentage for j, env in enumerate(envs) if j != i]
+                envs[i].other_avg_util = np.mean(other_avg_utilization) if other_avg_utilization else 0
+                    
                 new_state, agent_reward, done, _ = envs[i].step(action)
                 new_state = np.array(new_state).flatten()
                 new_states.append(new_state)
@@ -423,7 +414,7 @@ if __name__ == "__main__":
                     agent.decay_action_std(action_std_decay_rate, min_action_std)
                 
                 if debug:
-                    print(f"Agent {envs[i].id}, ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward} state(limit, usage, others): {envs[i].state[-1]}, shared_reward: {shared_reward}, agent_reward: {agent_reward}")
+                    print(f"Agent {envs[i].id}, ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state(limit, usage, others): {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
             if debug:
                 print()
             
@@ -441,7 +432,7 @@ if __name__ == "__main__":
         set_container_cpu_values(1000)
         for i in range(n_agents):
             while True:
-                (_, _, cpu_percentage), (_, _, _), (_, _) = envs[i].node.get_container_usage(envs[i].container_id)
+                (_, _, cpu_percentage), (_, _, _), (_, _), _ = envs[i].node.get_container_usage(envs[i].container_id)
                 if cpu_percentage > 20:
                     time.sleep(5)
                 else:
