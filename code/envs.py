@@ -86,20 +86,7 @@ class BaseElasticityEnv(Env):
     def get_container_usage(self):
         return self.node.get_container_usage(self.container_id)
 
-
-class DiscreteElasticityEnv(BaseElasticityEnv):
-    def __init__(self, id):
-        super().__init__(id)
-        self.action_space = spaces.Discrete(3)
-
-    def step(self, action):
-        if action == 0:
-            self.decrease_resources()
-        elif action == 2:
-            self.increase_resources()
-
-        self.state = self.get_current_usage()
-
+    def calculate_agent_reward(self):
         if self.dqn_reward:
             if self.last_cpu_percentage < self.LOWER_CPU:
                 # usage_penalty = 1.3 - self.last_cpu_percentage / 100
@@ -114,6 +101,23 @@ class DiscreteElasticityEnv(BaseElasticityEnv):
             if self.LOWER_CPU <= self.last_cpu_percentage <= self.UPPER_CPU:
                 # reward = (self.last_cpu_percentage - self.LOWER_CPU) / (self.UPPER_CPU - self.LOWER_CPU) # map 0 to 1
                 reward = 1
+        return reward
+
+
+class DiscreteElasticityEnv(BaseElasticityEnv):
+    def __init__(self, id):
+        super().__init__(id)
+        self.action_space = spaces.Discrete(3)
+
+    def step(self, action):
+        if action == 0:
+            self.decrease_resources()
+        elif action == 2:
+            self.increase_resources()
+
+        self.state = self.get_current_usage()
+
+        reward = self.calculate_agent_reward()
 
         self.steps += 1
         done = self.steps >= self.MAX_STEPS
@@ -151,21 +155,7 @@ class ContinuousElasticityEnv(BaseElasticityEnv):
             self.ALLOCATED = new_resource_limit
             patch_pod(self.pod_name, cpu_request=f"{new_resource_limit}m", cpu_limit=f"{new_resource_limit}m", container_name=self.container_name, debug=self.debug_deployment)
 
-        if self.dqn_reward:
-            # from dqn
-            if self.last_cpu_percentage < self.LOWER_CPU:
-                # usage_penalty = 1.3 - self.last_cpu_percentage / 100
-                usage_penalty = 0.75 - self.last_cpu_percentage / 100 # lower penalty on this
-            elif self.last_cpu_percentage > self.UPPER_CPU:
-                usage_penalty = self.last_cpu_percentage / 100
-            else:
-                usage_penalty = 0
-            reward = - usage_penalty
-        else:
-            reward = 0
-            if self.LOWER_CPU <= self.last_cpu_percentage <= self.UPPER_CPU:
-                # reward = (self.last_cpu_percentage - self.LOWER_CPU) / (self.UPPER_CPU - self.LOWER_CPU) # map 0 to 1
-                reward = 1
+        reward = self.calculate_agent_reward()
 
         self.steps += 1
         done = self.steps >= self.MAX_STEPS
@@ -175,20 +165,7 @@ class ContinuousElasticityEnv(BaseElasticityEnv):
     def mimic_step(self):
         self.state = self.get_current_usage()
 
-        if self.dqn_reward:
-            # from dqn
-            if self.last_cpu_percentage < self.LOWER_CPU:
-                # usage_penalty = 1.3 - self.last_cpu_percentage / 100
-                usage_penalty = 0.75 - self.last_cpu_percentage / 100 # lower penalty on this
-            elif self.last_cpu_percentage > self.UPPER_CPU:
-                usage_penalty = self.last_cpu_percentage / 100
-            else:
-                usage_penalty = 0
-            reward = - usage_penalty
-        else:
-            reward = 0
-            if self.LOWER_CPU <= self.last_cpu_percentage <= self.UPPER_CPU:
-                reward = (self.last_cpu_percentage - self.LOWER_CPU) / (self.UPPER_CPU - self.LOWER_CPU) # map 0 to 1
+        reward = self.calculate_agent_reward()
 
         self.steps += 1
         done = self.steps >= self.MAX_STEPS
