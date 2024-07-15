@@ -200,6 +200,8 @@ if __name__ == '__main__':
     parser.add_argument('--double', type=bool, default=False, help="Double rl")
     parser.add_argument('--load_weights', type=bool, default=False, help="Load weights from previous training")
     parser.add_argument('--variable_resources', type=bool, default=False, help="Random resources every 10 episodes")
+    parser.add_argument('--gamma_latency', type=float, default=0.5, help="Latency normalization")
+    parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
     args = parser.parse_args()
 
     double = args.double
@@ -209,6 +211,9 @@ if __name__ == '__main__':
     interval = args.interval
     randomize_reqs = args.random_rps
     variable_resources = args.variable_resources
+
+    gamma_latency = args.gamma_latency
+    debug = args.debug
 
     # MEMORY_SIZE = 1000
     MEMORY_SIZE = 500
@@ -221,26 +226,27 @@ if __name__ == '__main__':
     RESOURCES = args.init_resources
     INCREMENT_ACTION = args.increment_action
     USERS = 10
-    reqs_per_second -= USERS # interval is set to 1s
+    # reqs_per_second -= USERS # interval is set to 1s
 
     # shared reward weight
     alpha = args.alpha
 
     set_container_cpu_values(cpus=100)
 
-    MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{RESOURCES}mcmax{reqs_per_second}rps{interval}interval{alpha}alpha'
+    parent_dir = 'code/model_metric_data/dqn'
+    MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{RESOURCES}mcmax{reqs_per_second}rps{interval}interval{alpha}alpha{gamma_latency}gl'
     suffixes = ['_double' if double else '', '_dueling' if dueling else '', '_varres' if variable_resources else '']
     MODEL += ''.join(suffixes)
+    os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
 
     print(f"Initialized model {MODEL}, random_rps {randomize_reqs}, variable_resoruces {variable_resources}, interval {interval} ms, rps {reqs_per_second}")
-
-    os.makedirs(f'code/model_metric_data/{MODEL}', exist_ok=True)
 
     n_agents = args.n_agents
     envs = [ElastisityEnv(i, n_agents) for i in range(1, n_agents + 1)]
     for env in envs:
         env.MAX_CPU_LIMIT = RESOURCES
         env.INCREMENT = INCREMENT_ACTION
+        env.dqn_reward = False
 
     # Get number of actions from gym action space
     n_actions = envs[0].action_space.n
@@ -309,7 +315,16 @@ if __name__ == '__main__':
         ep_std = []
         for t in count():
             time.sleep(1)
+            
             latencies = spam_requests_single(USERS, url)
+            latency = np.mean([latency for latency in latencies if latency is not None])
+            ep_latencies.append(latency)
+
+            if envs[0].dqn_reward:
+                shared_reward = 1 - latency * 10
+            else:
+                latency = min(latency, gamma_latency)
+                shared_reward = (gamma_latency - latency) / gamma_latency
 
             actions = [select_action(state, agent, env) for state, agent, env in zip(states, agents, envs)]
 
@@ -326,12 +341,15 @@ if __name__ == '__main__':
                 if done:
                     next_states[i] = None
 
-            latency = np.mean([latency for latency in latencies if latency is not None])
-            ep_latencies.append(latency)
+                if debug:
+                    print(f"Agent {envs[i].id}, ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, AVAILABLE: {envs[i].AVAILABLE}, reward: {alpha * rewards[i] + (1 - alpha) * shared_reward:.2f} state(limit, usage, others): {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {rewards[i]:.2f}")
+            if debug:
+                print()
+        
             resource_std_dev = np.std(resources) / 500
             ep_std.append(resource_std_dev)
-            shared_rewards = [alpha * reward + (1 - alpha) * (1 - latency * 10) for reward in rewards]
-            # shared_rewards = [alpha * reward + (1 - alpha) * (1 - latency * 10) - resource_std_dev for reward in rewards]
+            shared_rewards = [alpha * agent_reward + (1 - alpha) * shared_reward for agent_reward in rewards]
+            # shared_rewards = [alpha * reward + (1 - alpha) * shared_reward - resource_std_dev for reward in rewards]
 
             if t % 25 == 0 and t != 0:
                 print(f"SharedR A*r+B*L: {shared_rewards}, reward_part: {rewards}, latency_part: {latency}, resource deviation: {resource_std_dev}. Step: {t}")
@@ -378,7 +396,7 @@ if __name__ == '__main__':
         set_container_cpu_values(1000)
         for i in range(n_agents):
             while True:
-                (_, _, cpu_percentage), (_, _, _), (_, _) = envs[i].node.get_container_usage(envs[i].container_id)
+                (_, _, cpu_percentage), (_, _, _), (_, _), _ = envs[i].node.get_container_usage(envs[i].container_id)
                 if cpu_percentage > 20:
                     time.sleep(5)
                 else:
@@ -391,19 +409,19 @@ if __name__ == '__main__':
 
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):
-            torch.save(agent.state_dict(), f'code/model_metric_data/{MODEL}/model_weights_agent_{i}.pth')
+            torch.save(agent.state_dict(), f'{parent_dir}/{MODEL}/model_weights_agent_{i}.pth')
     
         # save collected data for later analysis
         ep_summed_rewards_df = pd.DataFrame({'Episode': range(len(summed_rewards)), 'Reward': summed_rewards})
-        ep_summed_rewards_df.to_csv(f'code/model_metric_data/{MODEL}/ep_summed_rewards.csv', index=False)
+        ep_summed_rewards_df.to_csv(f'{parent_dir}/{MODEL}/ep_summed_rewards.csv', index=False)
 
         ep_latencies_df = pd.DataFrame({'Episode': range(len(mean_latencies)), 'Mean Latency': mean_latencies})
-        ep_latencies_df.to_csv(f'code/model_metric_data/{MODEL}/ep_latencies.csv', index=False)
+        ep_latencies_df.to_csv(f'{parent_dir}/{MODEL}/ep_latencies.csv', index=False)
 
         ep_dev = pd.DataFrame({'Episode': range(len(resource_dev)), 'Deviation': resource_dev})
-        ep_dev.to_csv(f'code/model_metric_data/{MODEL}/resource_dev.csv', index=False)
+        ep_dev.to_csv(f'{parent_dir}/{MODEL}/resource_dev.csv', index=False)
 
         for agent_idx, rewards in enumerate(agent_ep_summed_rewards):
-            filename = f'code/model_metric_data/{MODEL}/agent_{agent_idx}_ep_summed_rewards.csv'
+            filename = f'{parent_dir}/{MODEL}/agent_{agent_idx}_ep_summed_rewards.csv'
             agent_rewards_df = pd.DataFrame({'Episode': range(len(rewards)), 'Reward': rewards})
             agent_rewards_df.to_csv(filename, index=False)

@@ -198,6 +198,17 @@ class PPO:
             return action.item()
 
 
+    def select_inference_action(self, state):
+        with torch.no_grad():
+            state = torch.FloatTensor(state).to(device)
+            if self.has_continuous_action_space:
+                action = self.policy.actor(state)
+            else:
+                action_probs = self.policy.actor(state)
+                action = torch.argmax(action_probs, dim=-1)
+            return action
+
+
     def update(self):
         # Monte Carlo estimate of returns
         rewards = []
@@ -285,6 +296,7 @@ if __name__ == "__main__":
     parser.add_argument('--random_rps', action='store_true', default=False, help="Train on random requests every episode")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
     parser.add_argument('--variable_resources', action='store_true', default=False, help="Random resources every 10 episodes")
+    parser.add_argument('--old_reward', action='store_true', default=False, help="Use the old reward function")
     args = parser.parse_args()
 
     SAVE_WEIGHTS = True # Always save weightsB)
@@ -303,6 +315,7 @@ if __name__ == "__main__":
     scale_action = args.scale_action
     min_rps = args.min_rps
     make_checkpoints = args.make_checkpoints
+    old_reward = args.old_reward
 
     url = f"http://localhost:30888/predict"
     USERS = 10
@@ -312,9 +325,10 @@ if __name__ == "__main__":
         env.MAX_CPU_LIMIT = RESOURCES
         env.DEBUG = False
         env.scale_action = scale_action
+        env.dqn_reward = old_reward
     
     total_steps = envs[0].MAX_STEPS * episodes
-    update_timestep = envs[0].MAX_STEPS * 2
+    update_timestep = envs[0].MAX_STEPS * 4
     initial_action_std = 0.6
     action_std_decay_rate = 0.065
     min_action_std = 1e-7
@@ -322,10 +336,12 @@ if __name__ == "__main__":
 
     time_step = 0
 
-    agents = [PPO(env, has_continuous_action_space=True, action_std_init=initial_action_std, K_epochs=30) for env in envs]
+    agents = [PPO(env, has_continuous_action_space=True, action_std_init=initial_action_std, K_epochs=50) for env in envs]
 
     parent_dir = 'code/model_metric_data/ppo'
     MODEL = f'{episodes}ep{RESOURCES}resources{reqs_per_second}rps{interval}interval{alpha}alpha{scale_action}scale_a{gamma_latency}gl'
+    if old_reward:
+        MODEL += "_oldreward"
     if weights_dir:
         [agent.load_model(f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_actor.pth", f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
         print(f"Successfully loaded weights from {parent_dir}/{weights_dir}")
@@ -339,6 +355,9 @@ if __name__ == "__main__":
     mean_latencies = []
     agents_summed_rewards = [[] for _ in range(n_agents)]
 
+    init_patience = 2 # every second episode if the agent is stuck
+    patiences = [init_patience for _ in range(n_agents)]
+
     set_container_cpu_values(100)
     set_available_resource(envs, RESOURCES)
 
@@ -348,10 +367,6 @@ if __name__ == "__main__":
             for i, agent in enumerate(agents):
                 agent.save(f"{parent_dir}/{MODEL}/agent_{i}.pth")
             print(f"Checkpoint saved at episode {episode} for {n_agents} agents")
-
-        if episode % 2 == 0 and episode != 0:
-            for env in envs:
-                env.patch(100)
 
         if variable_resources and episode % 5 == 0:
             RESOURCES = random.choice([500, 750, 1000, 1250, 1500, 1750, 2000])
@@ -371,6 +386,22 @@ if __name__ == "__main__":
         ep_rewards = []
         agents_ep_reward = [[] for _ in range(n_agents)]
 
+        for i, env in enumerate(envs):
+            others_cpu = np.mean([env.ALLOCATED for j, env in enumerate(envs) if j != i])
+
+            if abs(env.ALLOCATED - others_cpu) > 200 and env.AVAILABLE <= 200:
+                patiences[i] -= 1
+            else:
+                patiences[i] = init_patience
+            
+            if patiences[i] == 0:
+                print(f"Agent {i} is stuck at {env.ALLOCATED} resources, {env.AVAILABLE} available resources")
+                patiences[i] = init_patience
+                env.patch(100)
+                env.reset()
+                set_available_resource(envs, RESOURCES)
+                print(f"Agent {i} resources changed to {env.ALLOCATED}, available resources: {env.AVAILABLE}")
+
         for step in range(envs[0].MAX_STEPS):
             time.sleep(1)
             agents_step_rewards = []
@@ -379,10 +410,14 @@ if __name__ == "__main__":
             latency = np.mean([latency for latency in latencies if latency is not None])
             ep_latencies.append(latency)
 
-            # shared_reward = 1 - latency * 10
-
-            latency = min(latency, gamma_latency)
-            shared_reward = (gamma_latency - latency) / gamma_latency
+            if envs[0].dqn_reward:
+                shared_reward = 1 - latency * 10
+            else:
+                latency = min(latency, gamma_latency)
+                shared_reward = (gamma_latency - latency) / gamma_latency
+            
+            # std_dev = np.std([env.ALLOCATED for env in envs])
+            # print(f"Std dev of resources {std_dev}")
 
             actions, new_states, dones = [], [], []
             for i, agent in enumerate(agents):
