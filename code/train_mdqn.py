@@ -15,7 +15,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-from env import ElastisityEnv
+from envs import DiscreteElasticityEnv
 import pandas as pd
 
 from spam_cluster import spam_requests_single
@@ -242,7 +242,7 @@ if __name__ == '__main__':
     print(f"Initialized model {MODEL}, random_rps {randomize_reqs}, variable_resoruces {variable_resources}, interval {interval} ms, rps {reqs_per_second}")
 
     n_agents = args.n_agents
-    envs = [ElastisityEnv(i, n_agents) for i in range(1, n_agents + 1)]
+    envs = [DiscreteElasticityEnv(i) for i in range(1, n_agents + 1)]
     for env in envs:
         env.MAX_CPU_LIMIT = RESOURCES
         env.INCREMENT = INCREMENT_ACTION

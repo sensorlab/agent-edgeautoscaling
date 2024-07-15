@@ -1,4 +1,4 @@
-from continous_env import ContinousElasticityEnv
+from envs import ContinuousElasticityEnv
 from spam_cluster import spam_requests_single
 from pod_controller import set_container_cpu_values
 from utils import calculate_dynamic_rps
@@ -143,8 +143,7 @@ class Actor(nn.Module):
 
 
 class DDPGagent():
-    def __init__(self, env, hidden_size=256, actor_learning_rate=3e-4, critic_learning_rate=1e-3, gamma=0.99, tau=1e-2,
-                 max_memory_size=50000):
+    def __init__(self, env, hidden_size=256, actor_learning_rate=3e-4, critic_learning_rate=1e-3, gamma=0.99, tau=1e-2, max_memory_size=50000):
         # Params
         self.num_states = env.observation_space.shape[0]
         self.num_actions = env.action_space.shape[0]
@@ -272,11 +271,12 @@ if __name__ == "__main__":
     url = f"http://localhost:30888/predict"
     USERS = 10
 
-    envs = [ContinousElasticityEnv(i, n_agents) for i in range(1, n_agents + 1)]
+    envs = [ContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
     for env in envs:
         env.MAX_CPU_LIMIT = RESOURCES
         env.DEBUG = False
         env.scale_action = scale_action
+
     agents = [DDPGagent(env, hidden_size=64, max_memory_size=60000) for env in envs]
     decay_period = envs[0].MAX_STEPS * episodes / 1.1 # Makes sense for now
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]

@@ -1,4 +1,4 @@
-from continous_env import ContinousElasticityEnv
+from envs import ContinuousElasticityEnv
 from spam_cluster import spam_requests_single
 from pod_controller import set_container_cpu_values
 from utils import calculate_dynamic_rps
@@ -320,7 +320,7 @@ if __name__ == "__main__":
     url = f"http://localhost:30888/predict"
     USERS = 10
 
-    envs = [ContinousElasticityEnv(i, n_agents) for i in range(1, n_agents + 1)]
+    envs = [ContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
     for env in envs:
         env.MAX_CPU_LIMIT = RESOURCES
         env.DEBUG = False

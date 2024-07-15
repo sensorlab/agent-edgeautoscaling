@@ -6,14 +6,14 @@ import argparse
 from itertools import count
 
 from train_mdqn import DQN, set_available_resource, DuelingDQN
-from env import ElastisityEnv
+from envs import DiscreteElasticityEnv
 from pod_controller import set_container_cpu_values
 
 
 def infer_mdqn(n_agents=3, model='mdqn300ep500m', resources=1000, increment=25, debug=True):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     n_agents = 3
-    envs = [ElastisityEnv(i, n_agents) for i in range(1, n_agents + 1)]
+    envs = [DiscreteElasticityEnv(i) for i in range(1, n_agents + 1)]
     state = envs[0].reset()
     n_actions = envs[0].action_space.n
     n_observations = len(state) * len(state[0])
@@ -29,7 +29,7 @@ def infer_mdqn(n_agents=3, model='mdqn300ep500m', resources=1000, increment=25, 
     
     # get paremeters from model folder name
     for env in envs:
-        env.DEBUG = debug
+        # env.DEBUG = debug
         env.MAX_CPU_LIMIT = resources
         env.INCREMENT = increment
 
@@ -59,6 +59,11 @@ def infer_mdqn(n_agents=3, model='mdqn300ep500m', resources=1000, increment=25, 
             # if done:
             #     next_states[i] = None
 
+            if debug:
+                print(f"Agent {envs[i].id}, ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward} state(limit, usage, others): {envs[i].state[-1]}")
+        if debug:
+            print()
+
         # print(envs[0].state[-3])
         states = [torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0) if observation is not None else None for observation in next_states]
 
@@ -73,9 +78,13 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action='store_true', help='Debug')
     args = parser.parse_args()
 
-    infer_mdqn(3, 'variational_loading/variational_resources/mdqn600ep500m25inc1000mcmax50rps500interval0.75alpha_double_dueling', args.resources, args.increment, args.debug)
+    set_container_cpu_values(50)
+    # model = 'variational_loading/variational_resources/mdqn1000ep500m25inc1000mcmax40rps500interval0.75alpha_double_dueling_varres'
+    model = 'variational_loading/variational_resources/mdqn600ep500m25inc1000mcmax50rps500interval0.75alpha_double_dueling' # best model so far
 
-    # set_container_cpu_values(50)
+    infer_mdqn(3, model, args.resources, args.increment, args.debug)
+    # infer_mdqn(3, 'variational_loading/variational_resources/variational_intervals/mdqn600ep500m25inc1000mcmax50rps500interval0.75alpha_double_dueling_pretrained', args.resources, args.increment, args.debug)
+
     # infer_mdqn(3, 'variational_loading/mdqn600ep500m25inc500mcmax140rps0.5alpha_double_dueling')
     # infer_mdqn(3, 'variational_loading/mdqn300ep500m25inc500mcmax90rps0.75alpha_double_dueling_pretrained')
     # infer_mdqn(3, 'variational_loading/variational_resources/mdqn600ep500m25inc1000mcmax50rps500interval0.75alpha_double_dueling')

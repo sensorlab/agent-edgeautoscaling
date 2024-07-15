@@ -1,15 +1,17 @@
 from train_ddpg import DDPGagent, set_available_resource
-from continous_env import ContinousElasticityEnv
+from envs import ContinuousElasticityEnv
 
 import numpy as np
 import time
 
 n_agents = 3
-envs = [ContinousElasticityEnv(i, n_agents) for i in range(1, n_agents + 1)]
+envs = [ContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
 agents = [DDPGagent(env, hidden_size=64) for env in envs]
 RESOURCES = 1000
-# model_folder = 'trained/continous/ddpg/1000ep1000resources50rps1000interval0.75alpha'
-model_folder = 'code/model_metric_data/ddpg/500ep1000resources50rps1000interval0.5alpha50scale_a0.5gl'
+# model_folder = 'trained/continous/ddpg/600ep1000resources50rps1000interval0.6alpha50scale_a0.5gl'
+# model_folder = 'code/model_metric_data/ddpg/300ep1000resources50rps1000interval0.5alpha50scale_a0.5gl_pretrained'
+model_folder = 'code/model_metric_data/ddpg/pretrained/100ep1000resources50rps1000interval0.75alpha50scale_a0.5gl'
+# model_folder = 'code/model_metric_data/ddpg/500ep1000resources50rps1000interval0.75alpha50scale_a0.5gl_pretrained'
 
 for id, agent in enumerate(agents):
     print(f'{model_folder}/agent_{id}_actor.pth', f'{model_folder}/agent_{id}_critic.pth')
