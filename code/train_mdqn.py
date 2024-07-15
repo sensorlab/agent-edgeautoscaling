@@ -19,7 +19,8 @@ from envs import DiscreteElasticityEnv
 import pandas as pd
 
 from spam_cluster import spam_requests_single
-from pod_controller import get_loadbalancer_external_port, set_container_cpu_values
+from pod_controller import set_container_cpu_values
+from utils import save_training_data
 
 
 class ReplayMemory(object):
@@ -202,6 +203,7 @@ if __name__ == '__main__':
     parser.add_argument('--variable_resources', type=bool, default=False, help="Random resources every 10 episodes")
     parser.add_argument('--gamma_latency', type=float, default=0.5, help="Latency normalization")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
+    parser.add_argument('--old_reward', action='store_true', default=False, help="Use the old reward function")
     args = parser.parse_args()
 
     double = args.double
@@ -213,6 +215,7 @@ if __name__ == '__main__':
     variable_resources = args.variable_resources
 
     gamma_latency = args.gamma_latency
+    old_reward = args.old_reward
     debug = args.debug
 
     # MEMORY_SIZE = 1000
@@ -246,7 +249,7 @@ if __name__ == '__main__':
     for env in envs:
         env.MAX_CPU_LIMIT = RESOURCES
         env.INCREMENT = INCREMENT_ACTION
-        env.dqn_reward = False
+        env.dqn_reward = old_reward
 
     # Get number of actions from gym action space
     n_actions = envs[0].action_space.n
@@ -281,7 +284,7 @@ if __name__ == '__main__':
     steps_done = 0
     summed_rewards = []
     mean_latencies = []
-    agent_ep_summed_rewards = [[] for _ in range(n_agents)]
+    agents_summed_rewards = [[] for _ in range(n_agents)]
     resource_dev = []
 
     # url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}/predict"
@@ -387,7 +390,7 @@ if __name__ == '__main__':
         summed_rewards.append(ep_rewards)
         resource_dev.append(np.mean(ep_std))
         
-        [agent_ep_summed_rewards[i].append(np.sum(reward)) for i, reward in enumerate(agents_ep_reward)]
+        [agents_summed_rewards[i].append(np.sum(reward)) for i, reward in enumerate(agents_ep_reward)]
         print(f"Episode {i_episode} reward: {ep_rewards} mean latency: {np.mean(ep_latencies)}")
 
         print("Cleaning up remaining requests...")
@@ -411,17 +414,4 @@ if __name__ == '__main__':
         for i, agent in enumerate(agents):
             torch.save(agent.state_dict(), f'{parent_dir}/{MODEL}/model_weights_agent_{i}.pth')
     
-        # save collected data for later analysis
-        ep_summed_rewards_df = pd.DataFrame({'Episode': range(len(summed_rewards)), 'Reward': summed_rewards})
-        ep_summed_rewards_df.to_csv(f'{parent_dir}/{MODEL}/ep_summed_rewards.csv', index=False)
-
-        ep_latencies_df = pd.DataFrame({'Episode': range(len(mean_latencies)), 'Mean Latency': mean_latencies})
-        ep_latencies_df.to_csv(f'{parent_dir}/{MODEL}/ep_latencies.csv', index=False)
-
-        ep_dev = pd.DataFrame({'Episode': range(len(resource_dev)), 'Deviation': resource_dev})
-        ep_dev.to_csv(f'{parent_dir}/{MODEL}/resource_dev.csv', index=False)
-
-        for agent_idx, rewards in enumerate(agent_ep_summed_rewards):
-            filename = f'{parent_dir}/{MODEL}/agent_{agent_idx}_ep_summed_rewards.csv'
-            agent_rewards_df = pd.DataFrame({'Episode': range(len(rewards)), 'Reward': rewards})
-            agent_rewards_df.to_csv(filename, index=False)
+        save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_latencies, agents_summed_rewards, resource_dev)

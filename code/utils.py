@@ -1,10 +1,10 @@
 import re
 import yaml
-import time
 import requests
 import json
 from kubernetes import client, config
 import numpy as np
+import pandas as pd
 
 from node import Node
 
@@ -71,3 +71,19 @@ def calculate_dynamic_rps(episode, reqs_per_second, min_rps, max_limit_rps=100, 
     dynamic_max_rps = min(dynamic_max_rps, max_limit_rps)
     random_rps = np.random.randint(min_rps, dynamic_max_rps) if randomize_reqs else reqs_per_second
     return dynamic_max_rps, random_rps
+
+def save_training_data(path, rewards, mean_latencies, agents_summed_rewards, resource_dev=None):
+    ep_summed_rewards_df = pd.DataFrame({'Episode': range(len(rewards)), 'Reward': rewards})
+    ep_summed_rewards_df.to_csv(f'{path}/ep_summed_rewards.csv', index=False)
+
+    ep_latencies_df = pd.DataFrame({'Episode': range(len(mean_latencies)), 'Mean Latency': mean_latencies})
+    ep_latencies_df.to_csv(f'{path}/ep_latencies.csv', index=False)
+
+    for agent_idx, rewards in enumerate(agents_summed_rewards):
+        filename = f'{path}/agent_{agent_idx}_ep_summed_rewards.csv'
+        agent_rewards_df = pd.DataFrame({'Episode': range(len(rewards)), 'Reward': rewards})
+        agent_rewards_df.to_csv(filename, index=False)
+
+    if resource_dev:
+        resource_dev_df = pd.DataFrame({'Episode': range(len(resource_dev)), 'Resource Deviation': resource_dev})
+        resource_dev_df.to_csv(f'{path}/resource_dev.csv', index=False)

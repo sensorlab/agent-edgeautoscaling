@@ -1,7 +1,7 @@
 from envs import ContinuousElasticityEnv
 from spam_cluster import spam_requests_single
 from pod_controller import set_container_cpu_values
-from utils import calculate_dynamic_rps
+from utils import save_training_data
 
 import os
 import subprocess
@@ -343,7 +343,7 @@ if __name__ == "__main__":
     if old_reward:
         MODEL += "_oldreward"
     if weights_dir:
-        [agent.load_model(f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_actor.pth", f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
+        [agent.load(f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_actor.pth", f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
         print(f"Successfully loaded weights from {parent_dir}/{weights_dir}")
         MODEL += "_pretrained"
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
@@ -386,21 +386,21 @@ if __name__ == "__main__":
         ep_rewards = []
         agents_ep_reward = [[] for _ in range(n_agents)]
 
-        for i, env in enumerate(envs):
-            others_cpu = np.mean([env.ALLOCATED for j, env in enumerate(envs) if j != i])
+        max_allocated_env = max(envs, key=lambda env: env.ALLOCATED)
+        others_cpu = np.mean([env.ALLOCATED for env in envs if env != max_allocated_env])
 
-            if abs(env.ALLOCATED - others_cpu) > 200 and env.AVAILABLE <= 200:
-                patiences[i] -= 1
-            else:
-                patiences[i] = init_patience
-            
-            if patiences[i] == 0:
-                print(f"Agent {i} is stuck at {env.ALLOCATED} resources, {env.AVAILABLE} available resources")
-                patiences[i] = init_patience
-                env.patch(100)
-                env.reset()
-                set_available_resource(envs, RESOURCES)
-                print(f"Agent {i} resources changed to {env.ALLOCATED}, available resources: {env.AVAILABLE}")
+        if abs(max_allocated_env.ALLOCATED - others_cpu) > 200 and max_allocated_env.AVAILABLE <= 200:
+            patiences[envs.index(max_allocated_env)] -= 1
+        else:
+            patiences[envs.index(max_allocated_env)] = init_patience
+
+        if patiences[envs.index(max_allocated_env)] == 0:
+            print(f"Environment with max allocated resources is stuck at {max_allocated_env.ALLOCATED} resources, {max_allocated_env.AVAILABLE} available resources")
+            patiences[envs.index(max_allocated_env)] = init_patience
+            max_allocated_env.patch(100)
+            max_allocated_env.reset()
+            set_available_resource(envs, RESOURCES)
+            print(f"Resources for the environment changed to {max_allocated_env.ALLOCATED}, available resources: {max_allocated_env.AVAILABLE}")
 
         for step in range(envs[0].MAX_STEPS):
             time.sleep(1)
@@ -481,15 +481,5 @@ if __name__ == "__main__":
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):
             agent.save(f"{parent_dir}/{MODEL}/agent_{i}.pth")
-        
-        ep_summed_rewards_df = pd.DataFrame({'Episode': range(len(rewards)), 'Reward': rewards})
-        ep_summed_rewards_df.to_csv(f'{parent_dir}/{MODEL}/ep_summed_rewards.csv', index=False)
 
-        ep_latencies_df = pd.DataFrame({'Episode': range(len(mean_latencies)), 'Mean Latency': mean_latencies})
-        ep_latencies_df.to_csv(f'{parent_dir}/{MODEL}/ep_latencies.csv', index=False)
-
-        for agent_idx, rewards in enumerate(agents_summed_rewards):
-            filename = f'{parent_dir}/{MODEL}/agent_{agent_idx}_ep_summed_rewards.csv'
-            agent_rewards_df = pd.DataFrame({'Episode': range(len(rewards)), 'Reward': rewards})
-            agent_rewards_df.to_csv(filename, index=False)
-
+        save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_latencies, agents_summed_rewards)

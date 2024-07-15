@@ -1,7 +1,7 @@
 from envs import ContinuousElasticityEnv
 from spam_cluster import spam_requests_single
 from pod_controller import set_container_cpu_values
-from utils import calculate_dynamic_rps
+from utils import save_training_data
 
 import os
 import subprocess
@@ -402,14 +402,4 @@ if __name__ == "__main__":
         for i, agent in enumerate(agents):
             agent.save_model(f"{parent_dir}/{MODEL}/agent_{i}")
         
-        ep_summed_rewards_df = pd.DataFrame({'Episode': range(len(rewards)), 'Reward': rewards})
-        ep_summed_rewards_df.to_csv(f'{parent_dir}/{MODEL}/ep_summed_rewards.csv', index=False)
-
-        ep_latencies_df = pd.DataFrame({'Episode': range(len(mean_latencies)), 'Mean Latency': mean_latencies})
-        ep_latencies_df.to_csv(f'{parent_dir}/{MODEL}/ep_latencies.csv', index=False)
-
-        for agent_idx, rewards in enumerate(agents_summed_rewards):
-            filename = f'{parent_dir}/{MODEL}/agent_{agent_idx}_ep_summed_rewards.csv'
-            agent_rewards_df = pd.DataFrame({'Episode': range(len(rewards)), 'Reward': rewards})
-            agent_rewards_df.to_csv(filename, index=False)
-
+        save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_latencies, agents_summed_rewards)

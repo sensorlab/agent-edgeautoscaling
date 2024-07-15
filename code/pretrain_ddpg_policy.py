@@ -5,11 +5,11 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from pod_controller import patch_pod, set_container_cpu_values
-from utils import init_nodes
+from pod_controller import set_container_cpu_values
+from utils import save_training_data
 from spam_cluster import spam_requests_single
 
-from continous_env import ContinousElasticityEnv
+from envs import ContinuousElasticityEnv
 from train_ddpg import DDPGagent, set_available_resource
 
 
@@ -31,7 +31,7 @@ if __name__ == '__main__':
     alpha = 0.75
     gamma_latency = 0.5
     min_rps = 10
-    bs = 128
+    bs = 4
     SAVE_WEIGHTS = True
     debug = True
 
@@ -39,7 +39,7 @@ if __name__ == '__main__':
     USERS = 10
 
     n_agents = 3
-    envs = [ContinousElasticityEnv(i, n_agents) for i in range(1, n_agents + 1)]
+    envs = [ContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
     for env in envs:
         env.MAX_CPU_LIMIT = resources
         env.MIN_CPU_LIMIT = min_cpu
@@ -110,7 +110,9 @@ if __name__ == '__main__':
                 agents_ep_reward[i].append(reward)
                 agents_step_rewards.append(reward)
 
-                agents[i].memory.push(states[i], [action], reward, new_state, done)
+                action = np.array([action], dtype=np.float32)
+
+                agents[i].memory.push(states[i], action, reward, new_state, done)
                 new_states.append(new_state)
                 dones.append(done)
                 if len(agents[i].memory) > bs:
@@ -159,13 +161,4 @@ if __name__ == '__main__':
         for i, agent in enumerate(agents):
             agent.save_model(f"{parent_dir}/{MODEL}/agent_{i}")
         
-        ep_summed_rewards_df = pd.DataFrame({'Episode': range(len(rewards)), 'Reward': rewards})
-        ep_summed_rewards_df.to_csv(f'{parent_dir}/{MODEL}/ep_summed_rewards.csv', index=False)
-
-        ep_latencies_df = pd.DataFrame({'Episode': range(len(mean_latencies)), 'Mean Latency': mean_latencies})
-        ep_latencies_df.to_csv(f'{parent_dir}/{MODEL}/ep_latencies.csv', index=False)
-
-        for agent_idx, rewards in enumerate(agents_summed_rewards):
-            filename = f'{parent_dir}/{MODEL}/agent_{agent_idx}_ep_summed_rewards.csv'
-            agent_rewards_df = pd.DataFrame({'Episode': range(len(rewards)), 'Reward': rewards})
-            agent_rewards_df.to_csv(filename, index=False)
+        save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_latencies, agents_summed_rewards)
