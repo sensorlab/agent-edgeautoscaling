@@ -287,7 +287,6 @@ if __name__ == "__main__":
     parser.add_argument('--rps', type=int, default=50, help="Baseline bound of requests per second for loading cluster, if random, it is the upper bound")
     parser.add_argument('--min_rps', type=int, default=10, help="Minimum Requests per second for loading cluster, if the random requests are enabled")
     parser.add_argument('--interval', type=int, default=1000, help="Milliseconds interval for requests")
-    parser.add_argument('--batch_size', type=int, default=64, help="Batch size for training")
     parser.add_argument('--gamma_latency', type=float, default=0.5, help="Latency normalization")
     parser.add_argument('--scale_action', type=int, default=50, help="How much does the agent scale with an action")
     parser.add_argument('--load_weights', type=str, default=False, help="Load weights from previous training with a string of the model parent directory")
@@ -309,7 +308,6 @@ if __name__ == "__main__":
     randomize_reqs = args.random_rps
     reqs_per_second = args.rps
     n_agents = args.n_agents
-    bs = args.batch_size
     debug = args.debug
     gamma_latency = args.gamma_latency
     scale_action = args.scale_action
@@ -328,7 +326,7 @@ if __name__ == "__main__":
         env.dqn_reward = old_reward
     
     total_steps = envs[0].MAX_STEPS * episodes
-    update_timestep = envs[0].MAX_STEPS * 4
+    update_timestep = envs[0].MAX_STEPS * 3
     initial_action_std = 0.6
     action_std_decay_rate = 0.065
     min_action_std = 1e-7
@@ -341,14 +339,14 @@ if __name__ == "__main__":
     parent_dir = 'code/model_metric_data/ppo'
     MODEL = f'{episodes}ep{RESOURCES}resources{reqs_per_second}rps{interval}interval{alpha}alpha{scale_action}scale_a{gamma_latency}gl'
     if old_reward:
-        MODEL += "_oldreward"
+        MODEL += "old_r"
     if weights_dir:
         [agent.load(f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_actor.pth", f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
         print(f"Successfully loaded weights from {parent_dir}/{weights_dir}")
         MODEL += "_pretrained"
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
 
-    print(f"Training {n_agents} agents for {episodes} episodes with {RESOURCES} resources, {reqs_per_second} requests per second, {interval} ms interval, {alpha} alpha, {bs} batch size\nModel name {MODEL}\n")
+    print(f"Training {n_agents} agents for {episodes} episodes with {RESOURCES} resources, {reqs_per_second} requests per second, {interval} ms interval, {alpha} alpha\nModel name {MODEL}\n")
 
     rewards = []
     avg_rewards = []
@@ -376,7 +374,7 @@ if __name__ == "__main__":
 
         random_rps = np.random.randint(min_rps, reqs_per_second) if randomize_reqs else reqs_per_second
         
-        spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval)])
+        spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval), '--variable'])
         print(f"Loading cluster with {random_rps} requests per second")
         
         states = [np.array(env.reset()).flatten() for env in envs]
@@ -395,7 +393,7 @@ if __name__ == "__main__":
             patiences[envs.index(max_allocated_env)] = init_patience
 
         if patiences[envs.index(max_allocated_env)] == 0:
-            print(f"Environment with max allocated resources is stuck at {max_allocated_env.ALLOCATED} resources, {max_allocated_env.AVAILABLE} available resources")
+            print(f"Environment {max_allocated_env.pod_name} with max allocated resources is stuck at {max_allocated_env.ALLOCATED} resources, {max_allocated_env.AVAILABLE} available resources")
             patiences[envs.index(max_allocated_env)] = init_patience
             max_allocated_env.patch(100)
             max_allocated_env.reset()

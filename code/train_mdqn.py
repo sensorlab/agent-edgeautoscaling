@@ -238,7 +238,7 @@ if __name__ == '__main__':
 
     parent_dir = 'code/model_metric_data/dqn'
     MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{RESOURCES}mcmax{reqs_per_second}rps{interval}interval{alpha}alpha{gamma_latency}gl'
-    suffixes = ['_double' if double else '', '_dueling' if dueling else '', '_varres' if variable_resources else '']
+    suffixes = ['_double' if double else '', '_dueling' if dueling else '', '_varres' if variable_resources else '', 'old_r' if old_reward else '']
     MODEL += ''.join(suffixes)
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
 
@@ -287,13 +287,16 @@ if __name__ == '__main__':
     agents_summed_rewards = [[] for _ in range(n_agents)]
     resource_dev = []
 
+    init_patience = 2 # every second episode if the agent is stuck
+    patiences = [init_patience for _ in range(n_agents)]
+
     # url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}/predict"
     url = f"http://localhost:30888/predict"
 
     for i_episode in tqdm(range(EPISODES)):
         if i_episode % 5 == 0 and i_episode != 0 and SAVE_WEIGHTS:
             for i, agent in enumerate(agents):
-                torch.save(agent.state_dict(), f'code/model_metric_data/{MODEL}/model_weights_agent_{i}.pth')
+                torch.save(agent.state_dict(), f'{parent_dir}/{MODEL}/model_weights_agent_{i}.pth')
                 print(f"Checkpoint: Saved weights for agent {i}")
         if variable_resources and i_episode % 10 == 0 and i_episode != 0:
             RESOURCES = random.choice([500, 750, 1000, 1250, 1500, 1750, 2000])
@@ -305,7 +308,7 @@ if __name__ == '__main__':
         random_rps = np.random.randint(5, reqs_per_second) if randomize_reqs else reqs_per_second
         
         # can overfill, so we reset the loading process on every episode
-        spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval)])
+        spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval), '--variable'])
         print(f"Loading the cluster with {random_rps} requests per {interval} ms")
         time.sleep(1) # for the limits to be set
         states = [env.reset() for env in envs]
@@ -316,6 +319,23 @@ if __name__ == '__main__':
         ep_latencies = []
         agents_ep_reward = [[] for _ in range(n_agents)]
         ep_std = []
+
+        max_allocated_env = max(envs, key=lambda env: env.ALLOCATED)
+        others_cpu = np.mean([env.ALLOCATED for env in envs if env != max_allocated_env])
+
+        if abs(max_allocated_env.ALLOCATED - others_cpu) > 200 and max_allocated_env.AVAILABLE <= 200:
+            patiences[envs.index(max_allocated_env)] -= 1
+        else:
+            patiences[envs.index(max_allocated_env)] = init_patience
+
+        if patiences[envs.index(max_allocated_env)] == 0:
+            print(f"Environment {max_allocated_env.pod_name} with max allocated resources is stuck at {max_allocated_env.ALLOCATED} resources, {max_allocated_env.AVAILABLE} available resources")
+            patiences[envs.index(max_allocated_env)] = init_patience
+            max_allocated_env.patch(100)
+            max_allocated_env.reset()
+            set_available_resource(envs, RESOURCES)
+            print(f"Resources for the environment changed to {max_allocated_env.ALLOCATED}, available resources: {max_allocated_env.AVAILABLE}")
+
         for t in count():
             time.sleep(1)
             
@@ -414,4 +434,4 @@ if __name__ == '__main__':
         for i, agent in enumerate(agents):
             torch.save(agent.state_dict(), f'{parent_dir}/{MODEL}/model_weights_agent_{i}.pth')
     
-        save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_latencies, agents_summed_rewards, resource_dev)
+        save_training_data(f'{parent_dir}/{MODEL}', summed_rewards, mean_latencies, agents_summed_rewards, resource_dev)
