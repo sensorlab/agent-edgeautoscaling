@@ -249,6 +249,7 @@ if __name__ == "__main__":
     parser.add_argument('--random_rps', action='store_true', default=False, help="Train on random requests every episode")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
     parser.add_argument('--variable_resources', action='store_true', default=False, help="Random resources every 10 episodes")
+    parser.add_argument('--old_reward', action='store_true', default=False, help="Use the old reward function")
     args = parser.parse_args()
 
     SAVE_WEIGHTS = True # Always save weightsB)
@@ -267,6 +268,7 @@ if __name__ == "__main__":
     scale_action = args.scale_action
     min_rps = args.min_rps
     make_checkpoints = args.make_checkpoints
+    old_reward = args.old_reward
 
     url = f"http://localhost:30888/predict"
     USERS = 10
@@ -276,12 +278,13 @@ if __name__ == "__main__":
         env.MAX_CPU_LIMIT = RESOURCES
         env.DEBUG = False
         env.scale_action = scale_action
+        env.dqn_reward = old_reward
 
-    agents = [DDPGagent(env, hidden_size=64, max_memory_size=60000) for env in envs]
+    agents = [DDPGagent(env, hidden_size=64, max_memory_size=500) for env in envs]
     decay_period = envs[0].MAX_STEPS * episodes / 1.1 # Makes sense for now
-    # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]
+    noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0, decay_period=decay_period) for env in envs]
-    noises = [OUNoise(env.action_space, max_sigma=0.07, min_sigma=0, decay_period=decay_period) for env in envs]
+    # noises = [OUNoise(env.action_space, max_sigma=0.07, min_sigma=0, decay_period=decay_period) for env in envs]
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=1250) for env in envs]
 
     parent_dir = 'code/model_metric_data/ddpg'
@@ -299,6 +302,9 @@ if __name__ == "__main__":
     mean_latencies = []
     agents_summed_rewards = [[] for _ in range(n_agents)]
 
+    init_patience = 2 # every second episode if the agent is stuck
+    patiences = [init_patience for _ in range(n_agents)]
+
     set_container_cpu_values(100)
     set_available_resource(envs, RESOURCES)
 
@@ -309,13 +315,19 @@ if __name__ == "__main__":
                 agent.save_model(f"{parent_dir}/{MODEL}/agent_{i}")
             print(f"Checkpoint saved at episode {episode} for {n_agents} agents")
 
+        if variable_resources and episode % 5 == 0:
+            RESOURCES = random.choice([500, 750, 1000, 1250, 1500, 1750, 2000])
+            for env in envs:
+                env.MAX_CPU_LIMIT = RESOURCES
+            print(f"Resources changed to {RESOURCES} for episode {episode}")
+
         random_rps = np.random.randint(min_rps, reqs_per_second) if randomize_reqs else reqs_per_second
         
         # Stick to finetuning, this doesnt work
         # Faster training times, unoptimized agents can train slow when the cluster is loaded too heavily
         # _, random_rps = calculate_dynamic_rps(episode, reqs_per_second, min_rps, scale_factor=0.005, randomize_reqs=randomize_reqs, max_limit_rps=100)
 
-        spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval)])
+        spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval), '--variable'])
         print(f"Loading cluster with {random_rps} requests per second")
         
         states = [np.array(env.reset()).flatten() for env in envs]
@@ -327,6 +339,25 @@ if __name__ == "__main__":
         ep_rewards = []
         agents_ep_reward = [[] for _ in range(n_agents)]
 
+        max_allocated_env = max(envs, key=lambda env: env.ALLOCATED)
+        others_cpu = np.mean([env.ALLOCATED for env in envs if env != max_allocated_env])
+
+        if abs(max_allocated_env.ALLOCATED - others_cpu) > 200 and max_allocated_env.AVAILABLE <= 200:
+            patiences[envs.index(max_allocated_env)] -= 1
+        else:
+            patiences[envs.index(max_allocated_env)] = init_patience
+
+        if patiences[envs.index(max_allocated_env)] == 0:
+            print(f"Environment {max_allocated_env.pod_name} with max allocated resources is stuck at {max_allocated_env.ALLOCATED} resources, {max_allocated_env.AVAILABLE} available resources")
+            # maybe not because memory keeps at 500
+            agents[envs.index(max_allocated_env)].memory.buffer.clear()
+            
+            patiences[envs.index(max_allocated_env)] = init_patience
+            max_allocated_env.patch(100)
+            max_allocated_env.reset()
+            set_available_resource(envs, RESOURCES)
+            print(f"Resources for the environment changed to {max_allocated_env.ALLOCATED}, available resources: {max_allocated_env.AVAILABLE}")
+
         for step in range(envs[0].MAX_STEPS):
             time.sleep(1)
             agents_step_rewards = []
@@ -335,9 +366,12 @@ if __name__ == "__main__":
             latency = np.mean([latency for latency in latencies if latency is not None])
             ep_latencies.append(latency)
 
-            shared_reward = 1 - latency * 10
-            # latency = min(latency, gamma_latency)
-            # shared_reward = (gamma_latency - latency) / gamma_latency
+            if envs[0].dqn_reward:
+                shared_reward = 1 - latency * 10
+            else:
+                latency = min(latency, gamma_latency)
+                shared_reward = (gamma_latency - latency) / gamma_latency
+
             actions, new_states, dones = [], [], []
             for i, agent in enumerate(agents):
                 state = states[i]
@@ -387,7 +421,7 @@ if __name__ == "__main__":
         set_container_cpu_values(1000)
         for i in range(n_agents):
             while True:
-                (_, _, cpu_percentage), (_, _, _), (_, _) = envs[i].node.get_container_usage(envs[i].container_id)
+                (_, _, cpu_percentage), (_, _, _), (_, _), _ = envs[i].node.get_container_usage(envs[i].container_id)
                 if cpu_percentage > 20:
                     time.sleep(5)
                 else:

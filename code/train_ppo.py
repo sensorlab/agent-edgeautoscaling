@@ -49,16 +49,20 @@ class ActorCritic(nn.Module):
             self.action_dim = action_dim
             self.action_var = torch.full((action_dim,), action_std_init * action_std_init).to(device)
 
-        if has_continuous_action_space :
+        if has_continuous_action_space:
             self.actor = nn.Sequential(
                             nn.Linear(state_dim, hidden_size),
                             nn.ReLU(),
+                            nn.Dropout(0.25),
                             nn.Linear(hidden_size, hidden_size * 2),
                             nn.ReLU(),
+                            nn.Dropout(0.25),
                             nn.Linear(hidden_size * 2, hidden_size * 2),
                             nn.ReLU(),
+                            nn.Dropout(0.25),
                             nn.Linear(hidden_size * 2, hidden_size),
                             nn.ReLU(),
+                            nn.Dropout(0.25),
                             nn.Linear(hidden_size, action_dim),
                             nn.Tanh()
                         )
@@ -66,29 +70,35 @@ class ActorCritic(nn.Module):
             self.actor = nn.Sequential(
                             nn.Linear(state_dim, hidden_size),
                             nn.ReLU(),
+                            nn.Dropout(0.25),
                             nn.Linear(hidden_size, hidden_size * 2),
                             nn.ReLU(),
+                            nn.Dropout(0.25),
                             nn.Linear(hidden_size * 2, hidden_size * 2),
                             nn.ReLU(),
+                            nn.Dropout(0.25),
                             nn.Linear(hidden_size * 2, hidden_size),
                             nn.ReLU(),
+                            nn.Dropout(0.25),
                             nn.Linear(hidden_size, action_dim),
                             nn.Softmax(dim=-1)
                         )
 
-        
         self.critic = nn.Sequential(
                         nn.Linear(state_dim, hidden_size),
                         nn.ReLU(),
+                        nn.Dropout(0.25),
                         nn.Linear(hidden_size, hidden_size * 2),
                         nn.ReLU(),
+                        nn.Dropout(0.25),
                         nn.Linear(hidden_size * 2, hidden_size * 2),
                         nn.ReLU(),
+                        nn.Dropout(0.25),
                         nn.Linear(hidden_size * 2, hidden_size),
                         nn.ReLU(),
+                        nn.Dropout(0.25),
                         nn.Linear(hidden_size, 1)
                     )
-        
 
     def set_action_std(self, new_action_std):
         if self.has_continuous_action_space:
@@ -326,7 +336,7 @@ if __name__ == "__main__":
         env.dqn_reward = old_reward
     
     total_steps = envs[0].MAX_STEPS * episodes
-    update_timestep = envs[0].MAX_STEPS * 3
+    update_timestep = envs[0].MAX_STEPS * 2
     initial_action_std = 0.6
     action_std_decay_rate = 0.065
     min_action_std = 1e-7
@@ -335,6 +345,9 @@ if __name__ == "__main__":
     time_step = 0
 
     agents = [PPO(env, has_continuous_action_space=True, action_std_init=initial_action_std, K_epochs=50) for env in envs]
+    for agent in agents:
+        agent.policy.train()
+        agent.policy_old.train()
 
     parent_dir = 'code/model_metric_data/ppo'
     MODEL = f'{episodes}ep{RESOURCES}resources{reqs_per_second}rps{interval}interval{alpha}alpha{scale_action}scale_a{gamma_latency}gl'
@@ -394,6 +407,8 @@ if __name__ == "__main__":
 
         if patiences[envs.index(max_allocated_env)] == 0:
             print(f"Environment {max_allocated_env.pod_name} with max allocated resources is stuck at {max_allocated_env.ALLOCATED} resources, {max_allocated_env.AVAILABLE} available resources")
+            agents[envs.index(max_allocated_env)].buffer.clear()
+            
             patiences[envs.index(max_allocated_env)] = init_patience
             max_allocated_env.patch(100)
             max_allocated_env.reset()

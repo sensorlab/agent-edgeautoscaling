@@ -19,15 +19,16 @@ for id, agent in enumerate(agents):
     print(f'Loaded {model_folder}/agent_{id}.pth')
 
 debug = True
-for env in envs:
+for i, env in enumerate(envs):
     env.DEBUG = False
+    agents[i].policy.eval() # set to evaluation mode
 
 set_available_resource(envs, RESOURCES)
 states = [np.array(env.reset()).flatten() for env in envs]
 while True:
     time.sleep(1)
-    actions = [agent.select_inference_action(state) for state, agent in zip(states, agents)]
-    # actions = [agent.select_action(state) for state, agent in zip(states, agents)]
+    # actions = [agent.select_inference_action(state) for state, agent in zip(states, agents)]
+    actions = [agent.select_action(state) for state, agent in zip(states, agents)]
     states, rewards, dones, _ = [], [], [], []
     for env, action in zip(envs, actions):
         state, reward, done, _ = env.step(action)
