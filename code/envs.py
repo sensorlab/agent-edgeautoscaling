@@ -37,7 +37,8 @@ class BaseElasticityEnv(Env):
 
         self.other_avg_util = 0.0
         self.STATE_LENTGH = 6
-        self.states_fifo = [[0, 0, 0, 0] for _ in range(self.STATE_LENTGH)] # init state
+        self.states_fifo = [[0, 0, 0] for _ in range(self.STATE_LENTGH)] # init state
+        # self.states_fifo = [[0, 0, 0, 0] for _ in range(self.STATE_LENTGH)] # init state
         self.state = self.get_current_usage()
 
         self.steps = 0
@@ -58,8 +59,8 @@ class BaseElasticityEnv(Env):
         n_cpu_limit, n_cpu = self.norm_cpu(cpu_limit), self.norm_cpu(cpu)
 
         available_normed = self.norm_cpu(self.AVAILABLE)
-        # state = [n_cpu_limit, n_cpu, available_normed]
-        state = [n_cpu_limit, n_cpu, available_normed, self.other_avg_util / 100]
+        state = [n_cpu_limit, n_cpu, available_normed]
+        # state = [n_cpu_limit, n_cpu, available_normed, self.other_avg_util / 100]
 
         self.states_fifo.append(state)
         self.states_fifo.pop(0)
