@@ -1,4 +1,4 @@
-from envs import ContinuousElasticityEnv
+from envs import ContinuousElasticityEnv, DiscreteElasticityEnv, InstantContinuousElasticityEnv
 from spam_cluster import spam_requests_single
 from pod_controller import set_container_cpu_values
 from utils import save_training_data
@@ -29,6 +29,8 @@ class RolloutBuffer:
         self.state_values = []
         self.is_terminals = []
     
+    def __len__(self):
+        return len(self.states)
 
     def clear(self):
         del self.actions[:]
@@ -49,20 +51,21 @@ class ActorCritic(nn.Module):
             self.action_dim = action_dim
             self.action_var = torch.full((action_dim,), action_std_init * action_std_init).to(device)
 
+        dropout = 0.1
         if has_continuous_action_space:
             self.actor = nn.Sequential(
                             nn.Linear(state_dim, hidden_size),
                             nn.ReLU(),
-                            nn.Dropout(0.25),
+                            nn.Dropout(dropout),
                             nn.Linear(hidden_size, hidden_size * 2),
                             nn.ReLU(),
-                            nn.Dropout(0.25),
+                            nn.Dropout(dropout),
                             nn.Linear(hidden_size * 2, hidden_size * 2),
                             nn.ReLU(),
-                            nn.Dropout(0.25),
+                            nn.Dropout(dropout),
                             nn.Linear(hidden_size * 2, hidden_size),
                             nn.ReLU(),
-                            nn.Dropout(0.25),
+                            nn.Dropout(dropout),
                             nn.Linear(hidden_size, action_dim),
                             nn.Tanh()
                         )
@@ -70,16 +73,16 @@ class ActorCritic(nn.Module):
             self.actor = nn.Sequential(
                             nn.Linear(state_dim, hidden_size),
                             nn.ReLU(),
-                            nn.Dropout(0.25),
+                            nn.Dropout(dropout),
                             nn.Linear(hidden_size, hidden_size * 2),
                             nn.ReLU(),
-                            nn.Dropout(0.25),
+                            nn.Dropout(dropout),
                             nn.Linear(hidden_size * 2, hidden_size * 2),
                             nn.ReLU(),
-                            nn.Dropout(0.25),
+                            nn.Dropout(dropout),
                             nn.Linear(hidden_size * 2, hidden_size),
                             nn.ReLU(),
-                            nn.Dropout(0.25),
+                            nn.Dropout(dropout),
                             nn.Linear(hidden_size, action_dim),
                             nn.Softmax(dim=-1)
                         )
@@ -87,16 +90,16 @@ class ActorCritic(nn.Module):
         self.critic = nn.Sequential(
                         nn.Linear(state_dim, hidden_size),
                         nn.ReLU(),
-                        nn.Dropout(0.25),
+                        nn.Dropout(dropout),
                         nn.Linear(hidden_size, hidden_size * 2),
                         nn.ReLU(),
-                        nn.Dropout(0.25),
+                        nn.Dropout(dropout),
                         nn.Linear(hidden_size * 2, hidden_size * 2),
                         nn.ReLU(),
-                        nn.Dropout(0.25),
+                        nn.Dropout(dropout),
                         nn.Linear(hidden_size * 2, hidden_size),
                         nn.ReLU(),
-                        nn.Dropout(0.25),
+                        nn.Dropout(dropout),
                         nn.Linear(hidden_size, 1)
                     )
 
@@ -300,12 +303,17 @@ if __name__ == "__main__":
     parser.add_argument('--gamma_latency', type=float, default=0.5, help="Latency normalization")
     parser.add_argument('--scale_action', type=int, default=50, help="How much does the agent scale with an action")
     parser.add_argument('--load_weights', type=str, default=False, help="Load weights from previous training with a string of the model parent directory")
+    parser.add_argument('--batch_size', type=int, default=64, help="Batch size for training")
+    parser.add_argument('--k_epochs', type=int, default=10, help="K-epochs for ppo training")
+    parser.add_argument('--reward_function', type=int, default=1, help="Options: 1, 2, 3, 4, 5...")
 
     parser.add_argument('--make_checkpoints', action='store_true', default=False, help="Save weights every 5 episodes")
     parser.add_argument('--random_rps', action='store_true', default=False, help="Train on random requests every episode")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
     parser.add_argument('--variable_resources', action='store_true', default=False, help="Random resources every 10 episodes")
     parser.add_argument('--old_reward', action='store_true', default=False, help="Use the old reward function")
+    parser.add_argument('--discrete', action='store_true', default=False, help="Use discrete actions")
+    parser.add_argument('--instant', action='store_true', default=False, help="Scale directly to value")
     args = parser.parse_args()
 
     SAVE_WEIGHTS = True # Always save weightsB)
@@ -324,37 +332,60 @@ if __name__ == "__main__":
     min_rps = args.min_rps
     make_checkpoints = args.make_checkpoints
     old_reward = args.old_reward
+    batch_size = args.batch_size
+    discrete = args.discrete
+    reward_function = args.reward_function
+    k_epochs = args.k_epochs
+    instant = args.instant
 
     url = f"http://localhost:30888/predict"
     USERS = 10
 
-    envs = [ContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
-    for env in envs:
-        env.MAX_CPU_LIMIT = RESOURCES
-        env.DEBUG = False
-        env.scale_action = scale_action
-        env.dqn_reward = old_reward
+    if discrete:
+        envs = [DiscreteElasticityEnv(i) for i in range(1, n_agents + 1)]
+        increment_action = 25
+        for env in envs:
+            env.MAX_CPU_LIMIT = RESOURCES
+            env.DEBUG = False
+            env.INCREMENT = increment_action
+            env.dqn_reward = old_reward
+    else:
+        if instant:
+            envs = [InstantContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
+        else:
+            envs = [ContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
+
+        for env in envs:
+            env.MAX_CPU_LIMIT = RESOURCES
+            env.DEBUG = False
+            env.scale_action = scale_action
+            env.dqn_reward = old_reward
     
     total_steps = envs[0].MAX_STEPS * episodes
-    update_timestep = envs[0].MAX_STEPS * 2
-    initial_action_std = 0.6
-    action_std_decay_rate = 0.065
-    min_action_std = 1e-7
-    action_std_decay_freq = total_steps // 11 # Frequency of decay
+    update_timestep = envs[0].MAX_STEPS * 3
+    initial_action_std = 0.5
+    action_std_decay_rate = 0.05
+    min_action_std = 0.1
+    action_std_decay_freq = total_steps // 15 # Frequency of decay
 
     time_step = 0
 
-    agents = [PPO(env, has_continuous_action_space=True, action_std_init=initial_action_std, K_epochs=50) for env in envs]
+    agents = [PPO(env, has_continuous_action_space=not discrete, action_std_init=initial_action_std, K_epochs=k_epochs) for env in envs]
+    # Set dropout to training mode
     for agent in agents:
         agent.policy.train()
         agent.policy_old.train()
 
     parent_dir = 'code/model_metric_data/ppo'
-    MODEL = f'{episodes}ep{RESOURCES}resources{reqs_per_second}rps{interval}interval{alpha}alpha{scale_action}scale_a{gamma_latency}gl'
+    MODEL = f'{episodes}ep{RESOURCES}resources_rf_{reward_function}_{reqs_per_second}rps{interval}interval{k_epochs}kepochs{alpha}alpha{scale_action}scale_a{gamma_latency}gl'
     if old_reward:
         MODEL += "old_r"
+    if discrete:
+        MODEL += '_discrete'
+    if instant:
+        MODEL += '_instantscale'
     if weights_dir:
-        [agent.load(f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_actor.pth", f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
+        [agent.load(f"{parent_dir}/{weights_dir}/agent_{i}.pth") for i, agent in enumerate(agents)]
         print(f"Successfully loaded weights from {parent_dir}/{weights_dir}")
         MODEL += "_pretrained"
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
@@ -366,17 +397,21 @@ if __name__ == "__main__":
     mean_latencies = []
     agents_summed_rewards = [[] for _ in range(n_agents)]
 
-    init_patience = 2 # every second episode if the agent is stuck
+    init_patience = 20 # every second episode if the agent is stuck
     patiences = [init_patience for _ in range(n_agents)]
 
     set_container_cpu_values(100)
     set_available_resource(envs, RESOURCES)
 
+    utilization_all_step_rewards = [[] for _ in range(n_agents)]
+    all_steps_latencies_rewards = []
+    all_steps_latencies = []
+
     for episode in tqdm(range(episodes)):
         # Checkpoint
-        if episode % 5 == 0 and episode != 0 and make_checkpoints:
+        if episode % 10 == 0 and episode != 0 and make_checkpoints:
             for i, agent in enumerate(agents):
-                agent.save(f"{parent_dir}/{MODEL}/agent_{i}.pth")
+                agent.save(f"{parent_dir}/{MODEL}/ep_{episode}_agent_{i}.pth")
             print(f"Checkpoint saved at episode {episode} for {n_agents} agents")
 
         if variable_resources and episode % 5 == 0:
@@ -384,6 +419,10 @@ if __name__ == "__main__":
             for env in envs:
                 env.MAX_CPU_LIMIT = RESOURCES
             print(f"Resources changed to {RESOURCES} for episode {episode}")
+
+        if episode % 4 == 0:
+            for env in envs:
+                env.patch(100)
 
         random_rps = np.random.randint(min_rps, reqs_per_second) if randomize_reqs else reqs_per_second
         
@@ -397,58 +436,60 @@ if __name__ == "__main__":
         ep_rewards = []
         agents_ep_reward = [[] for _ in range(n_agents)]
 
-        max_allocated_env = max(envs, key=lambda env: env.ALLOCATED)
-        others_cpu = np.mean([env.ALLOCATED for env in envs if env != max_allocated_env])
-
-        if abs(max_allocated_env.ALLOCATED - others_cpu) > 200 and max_allocated_env.AVAILABLE <= 200:
-            patiences[envs.index(max_allocated_env)] -= 1
-        else:
-            patiences[envs.index(max_allocated_env)] = init_patience
-
-        if patiences[envs.index(max_allocated_env)] == 0:
-            print(f"Environment {max_allocated_env.pod_name} with max allocated resources is stuck at {max_allocated_env.ALLOCATED} resources, {max_allocated_env.AVAILABLE} available resources")
-            agents[envs.index(max_allocated_env)].buffer.clear()
-            
-            patiences[envs.index(max_allocated_env)] = init_patience
-            max_allocated_env.patch(100)
-            max_allocated_env.reset()
-            set_available_resource(envs, RESOURCES)
-            print(f"Resources for the environment changed to {max_allocated_env.ALLOCATED}, available resources: {max_allocated_env.AVAILABLE}")
-
         for step in range(envs[0].MAX_STEPS):
             time.sleep(1)
+            time_step += 1
             agents_step_rewards = []
 
             latencies = spam_requests_single(USERS, url)
             latency = np.mean([latency for latency in latencies if latency is not None])
+
+            all_steps_latencies.append(latency)
             ep_latencies.append(latency)
 
-            if envs[0].dqn_reward:
-                shared_reward = 1 - latency * 10
-            else:
-                latency = min(latency, gamma_latency)
-                shared_reward = (gamma_latency - latency) / gamma_latency
+            # if envs[0].dqn_reward:
+            #     shared_reward = 1 - latency * 10
+            # else:
+            #     latency = min(latency, gamma_latency)
+            #     shared_reward = (gamma_latency - latency) / gamma_latency
             
-            # std_dev = np.std([env.ALLOCATED for env in envs])
-            # print(f"Std dev of resources {std_dev}")
+            match reward_function:
+                case 1:
+                    shared_reward = - latency * 10
+                case 2:
+                    shared_reward = (1 - 10 * (latency - 0.01))
+                case 3:
+                    shared_reward = (1 - 10 * latency)
+                case 4:
+                    shared_reward = (- latency * 10)
+                case 5:
+                    shared_reward = (1 - 10 * latency)
+                case 42:
+                    latency = min(latency, gamma_latency)
+                    shared_reward = (gamma_latency - latency) / gamma_latency
+                case _:
+                    print("No implemented reward function")
+                    break
+
+            all_steps_latencies_rewards.append(shared_reward)
 
             actions, new_states, dones = [], [], []
             for i, agent in enumerate(agents):
                 action = agent.select_action(states[i])
 
-                other_avg_utilization = [env.last_cpu_percentage for j, env in enumerate(envs) if j != i]
-                envs[i].other_avg_util = np.mean(other_avg_utilization) if other_avg_utilization else 0
-                    
-                new_state, agent_reward, done, _ = envs[i].step(action)
+                new_state, agent_reward, done, _ = envs[i].step(action, reward_function)
                 new_state = np.array(new_state).flatten()
                 new_states.append(new_state)
                 dones.append(done)
 
-                time_step += 1
-
                 set_available_resource(envs, RESOURCES)
 
-                reward = alpha * agent_reward + (1 - alpha) * shared_reward
+                # reward = alpha * agent_reward + (1 - alpha) * shared_reward
+                # reward = 10 + agent_reward * 10 + shared_reward
+                reward = 0.5 * agent_reward + shared_reward
+
+                utilization_all_step_rewards[i].append(agent_reward)
+                
                 agents_ep_reward[i].append(reward)
                 agents_step_rewards.append(reward)
 
@@ -461,11 +502,11 @@ if __name__ == "__main__":
                 if time_step % action_std_decay_freq == 0:
                     agent.decay_action_std(action_std_decay_rate, min_action_std)
                 
-                if debug:
+                if debug or time_step % envs[i].MAX_STEPS / 2 == 0:
                     print(f"Agent {envs[i].id}, ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state(limit, usage, others): {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
-            if debug:
+            if debug or time_step % envs[i].MAX_STEPS / 2 == 0:
                 print()
-            
+
             states = new_states
             ep_rewards.append(np.mean(agents_step_rewards))
             
@@ -482,7 +523,7 @@ if __name__ == "__main__":
             while True:
                 (_, _, cpu_percentage), (_, _, _), (_, _), _ = envs[i].node.get_container_usage(envs[i].container_id)
                 if cpu_percentage > 20:
-                    time.sleep(5)
+                    time.sleep(1.5)
                 else:
                     break
         
@@ -496,3 +537,15 @@ if __name__ == "__main__":
             agent.save(f"{parent_dir}/{MODEL}/agent_{i}.pth")
 
         save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_latencies, agents_summed_rewards)
+
+        for agent_idx, rewards in enumerate(utilization_all_step_rewards):
+            filename = f'{parent_dir}/{MODEL}/agent_{agent_idx}_step_util_rewards.csv'
+            agent_rewards_df = pd.DataFrame({'Step': range(len(rewards)), 'Reward': rewards})
+            agent_rewards_df.to_csv(filename, index=False)
+
+        step_latency_reward_df = pd.DataFrame({'Step': range(len(all_steps_latencies_rewards)), 'Shared reward': all_steps_latencies_rewards})
+        step_latency_reward_df.to_csv(f'{parent_dir}/{MODEL}/step_latency_shared_reward.csv', index=False)
+
+        step_latenices_df = pd.DataFrame({'Step': range(len(all_steps_latencies)), 'Latency': all_steps_latencies})
+        step_latenices_df.to_csv(f'{parent_dir}/{MODEL}/step_latencies.csv', index=False)
+    

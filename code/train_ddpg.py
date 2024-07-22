@@ -95,6 +95,11 @@ class Memory:
 
         return state_batch, action_batch, reward_batch, next_state_batch, done_batch
 
+    def delete_last(self, batch_size):
+        for _ in range(batch_size):
+            if self.buffer:
+                self.buffer.pop()
+
     def __len__(self):
         return len(self.buffer)
 
@@ -281,8 +286,10 @@ if __name__ == "__main__":
         env.dqn_reward = old_reward
 
     agents = [DDPGagent(env, hidden_size=64, max_memory_size=500) for env in envs]
-    decay_period = envs[0].MAX_STEPS * episodes / 1.1 # Makes sense for now
-    noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]
+    # decay_period = envs[0].MAX_STEPS * episodes / 1.1 # Makes sense for now
+    decay_period = envs[0].MAX_STEPS * episodes / 2
+    # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]
+    noises = [OUNoise(env.action_space, max_sigma=0.25, min_sigma=0.025, decay_period=decay_period) for env in envs]
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0, decay_period=decay_period) for env in envs]
     # noises = [OUNoise(env.action_space, max_sigma=0.07, min_sigma=0, decay_period=decay_period) for env in envs]
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=1250) for env in envs]
@@ -302,17 +309,14 @@ if __name__ == "__main__":
     mean_latencies = []
     agents_summed_rewards = [[] for _ in range(n_agents)]
 
-    init_patience = 2 # every second episode if the agent is stuck
-    patiences = [init_patience for _ in range(n_agents)]
-
     set_container_cpu_values(100)
     set_available_resource(envs, RESOURCES)
 
     for episode in tqdm(range(episodes)):
         # Checkpoint
-        if episode % 5 == 0 and episode != 0 and make_checkpoints:
+        if episode % 10 == 0 and episode != 0 and make_checkpoints:
             for i, agent in enumerate(agents):
-                agent.save_model(f"{parent_dir}/{MODEL}/agent_{i}")
+                agent.save_model(f"{parent_dir}/{MODEL}/ep_{episode}_agent_{i}")
             print(f"Checkpoint saved at episode {episode} for {n_agents} agents")
 
         if variable_resources and episode % 5 == 0:
@@ -323,10 +327,6 @@ if __name__ == "__main__":
 
         random_rps = np.random.randint(min_rps, reqs_per_second) if randomize_reqs else reqs_per_second
         
-        # Stick to finetuning, this doesnt work
-        # Faster training times, unoptimized agents can train slow when the cluster is loaded too heavily
-        # _, random_rps = calculate_dynamic_rps(episode, reqs_per_second, min_rps, scale_factor=0.005, randomize_reqs=randomize_reqs, max_limit_rps=100)
-
         spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval), '--variable'])
         print(f"Loading cluster with {random_rps} requests per second")
         
@@ -339,25 +339,6 @@ if __name__ == "__main__":
         ep_rewards = []
         agents_ep_reward = [[] for _ in range(n_agents)]
 
-        max_allocated_env = max(envs, key=lambda env: env.ALLOCATED)
-        others_cpu = np.mean([env.ALLOCATED for env in envs if env != max_allocated_env])
-
-        if abs(max_allocated_env.ALLOCATED - others_cpu) > 200 and max_allocated_env.AVAILABLE <= 200:
-            patiences[envs.index(max_allocated_env)] -= 1
-        else:
-            patiences[envs.index(max_allocated_env)] = init_patience
-
-        if patiences[envs.index(max_allocated_env)] == 0:
-            print(f"Environment {max_allocated_env.pod_name} with max allocated resources is stuck at {max_allocated_env.ALLOCATED} resources, {max_allocated_env.AVAILABLE} available resources")
-            # maybe not because memory keeps at 500
-            agents[envs.index(max_allocated_env)].memory.buffer.clear()
-            
-            patiences[envs.index(max_allocated_env)] = init_patience
-            max_allocated_env.patch(100)
-            max_allocated_env.reset()
-            set_available_resource(envs, RESOURCES)
-            print(f"Resources for the environment changed to {max_allocated_env.ALLOCATED}, available resources: {max_allocated_env.AVAILABLE}")
-
         for step in range(envs[0].MAX_STEPS):
             time.sleep(1)
             agents_step_rewards = []
@@ -366,11 +347,12 @@ if __name__ == "__main__":
             latency = np.mean([latency for latency in latencies if latency is not None])
             ep_latencies.append(latency)
 
-            if envs[0].dqn_reward:
-                shared_reward = 1 - latency * 10
-            else:
-                latency = min(latency, gamma_latency)
-                shared_reward = (gamma_latency - latency) / gamma_latency
+            shared_reward = (1 - 10 * (latency - 0.01))
+            # if envs[0].dqn_reward:
+            #     shared_reward = 1 - latency * 10
+            # else:
+            #     latency = min(latency, gamma_latency)
+            #     shared_reward = (gamma_latency - latency) / gamma_latency
 
             actions, new_states, dones = [], [], []
             for i, agent in enumerate(agents):
@@ -380,11 +362,12 @@ if __name__ == "__main__":
                 actions.append(action)
 
             for i, env in enumerate(envs):
-                new_state, reward, done, _ = env.step(actions[i])
+                new_state, agent_reward, done, _ = env.step(actions[i], 2)
                 new_state = np.array(new_state).flatten()
                 set_available_resource(envs, RESOURCES)
 
-                reward = alpha * reward + (1 - alpha) * shared_reward
+                # reward = alpha * agent_reward + (1 - alpha) * shared_reward
+                reward = 0.5 * agent_reward + shared_reward
 
                 agents[i].memory.push(states[i], actions[i], reward, new_state, done)
                 new_states.append(new_state)
@@ -394,7 +377,7 @@ if __name__ == "__main__":
                     agents[i].update(bs)
                 agents_step_rewards.append(reward)
                 if debug:
-                    print(f"Agent {env.id}, ACTION: {actions[i]}, LIMIT: {env.ALLOCATED}, AVAILABLE: {env.AVAILABLE}, reward: {reward} state(limit, usage, others): {env.state[-1]}, shared_reward: {shared_reward}, agent_reward: {reward}")
+                    print(f"Agent {env.id}, ACTION: {actions[i]}, LIMIT: {env.ALLOCATED}, AVAILABLE: {env.AVAILABLE}, reward: {reward} state(limit, usage, others): {env.state[-1]}, shared_reward: {shared_reward}, agent_reward: {agent_reward}")
             if debug:
                 print()
 

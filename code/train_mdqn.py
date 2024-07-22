@@ -183,8 +183,8 @@ if __name__ == '__main__':
     GAMMA = 0.99
     EPS_START = 0.9
     # EPS_END = 0.25
-    EPS_END = 0.1
-    EPS_DECAY = 10_000
+    EPS_END = 0.15
+    EPS_DECAY = 500
     TAU = 0.005
     LR = 1e-4
 
@@ -294,13 +294,13 @@ if __name__ == '__main__':
     url = f"http://localhost:30888/predict"
 
     for i_episode in tqdm(range(EPISODES)):
-        if i_episode % 5 == 0 and i_episode != 0 and SAVE_WEIGHTS:
+        if i_episode % 10 == 0 and i_episode != 0 and SAVE_WEIGHTS:
             for i, agent in enumerate(agents):
-                torch.save(agent.state_dict(), f'{parent_dir}/{MODEL}/model_weights_agent_{i}.pth')
+                torch.save(agent.state_dict(), f'{parent_dir}/{MODEL}/ep_{i_episode}_agent_{i}.pth')
                 print(f"Checkpoint: Saved weights for agent {i}")
         if variable_resources and i_episode % 10 == 0 and i_episode != 0:
             RESOURCES = random.choice([500, 750, 1000, 1250, 1500, 1750, 2000])
-            for env in envs:
+            for env in envs: 
                 env.MAX_CPU_LIMIT = RESOURCES
             print(f"Resources changed to {RESOURCES} for episode {i_episode}")
 
@@ -320,21 +320,21 @@ if __name__ == '__main__':
         agents_ep_reward = [[] for _ in range(n_agents)]
         ep_std = []
 
-        max_allocated_env = max(envs, key=lambda env: env.ALLOCATED)
-        others_cpu = np.mean([env.ALLOCATED for env in envs if env != max_allocated_env])
+        # max_allocated_env = max(envs, key=lambda env: env.ALLOCATED)
+        # others_cpu = np.mean([env.ALLOCATED for env in envs if env != max_allocated_env])
 
-        if abs(max_allocated_env.ALLOCATED - others_cpu) > 200 and max_allocated_env.AVAILABLE <= 200:
-            patiences[envs.index(max_allocated_env)] -= 1
-        else:
-            patiences[envs.index(max_allocated_env)] = init_patience
+        # if abs(max_allocated_env.ALLOCATED - others_cpu) > 200 and max_allocated_env.AVAILABLE <= 200:
+        #     patiences[envs.index(max_allocated_env)] -= 1
+        # else:
+        #     patiences[envs.index(max_allocated_env)] = init_patience
 
-        if patiences[envs.index(max_allocated_env)] == 0:
-            print(f"Environment {max_allocated_env.pod_name} with max allocated resources is stuck at {max_allocated_env.ALLOCATED} resources, {max_allocated_env.AVAILABLE} available resources")
-            patiences[envs.index(max_allocated_env)] = init_patience
-            max_allocated_env.patch(100)
-            max_allocated_env.reset()
-            set_available_resource(envs, RESOURCES)
-            print(f"Resources for the environment changed to {max_allocated_env.ALLOCATED}, available resources: {max_allocated_env.AVAILABLE}")
+        # if patiences[envs.index(max_allocated_env)] == 0:
+        #     print(f"Environment {max_allocated_env.pod_name} with max allocated resources is stuck at {max_allocated_env.ALLOCATED} resources, {max_allocated_env.AVAILABLE} available resources")
+        #     patiences[envs.index(max_allocated_env)] = init_patience
+        #     max_allocated_env.patch(100)
+        #     # max_allocated_env.reset()
+        #     set_available_resource(envs, RESOURCES)
+        #     print(f"Resources for the environment changed to {max_allocated_env.ALLOCATED}, available resources: {max_allocated_env.AVAILABLE}")
 
         for t in count():
             time.sleep(1)

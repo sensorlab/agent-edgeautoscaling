@@ -51,7 +51,7 @@ def infer_mdqn(n_agents=3, model='mdqn300ep500m', resources=1000, increment=25, 
 
         next_states, rewards, dones = [], [], []
         for i, action in enumerate(actions):
-            observation, reward, done, _ = envs[i].step(action.item())
+            observation, reward, done, _ = envs[i].step(action.item(), 1)
             set_available_resource(envs, resources)
             next_states.append(np.array(observation).flatten())
             rewards.append(reward)
@@ -81,6 +81,8 @@ if __name__ == "__main__":
     set_container_cpu_values(50)
     # model = 'variational_loading/variational_resources/mdqn1000ep500m25inc1000mcmax40rps500interval0.75alpha_double_dueling_varres'
     model = 'variational_loading/variational_resources/mdqn600ep500m25inc1000mcmax50rps500interval0.75alpha_double_dueling' # best model so far
+    # model = 'new_reward/dqn/mdqn300ep500m25inc1000mcmax50rps1000interval0.5alpha0.5gl_double_dueling_varres' # good, better changeable resources
+    # model = 'dqn/mdqn50ep500m25inc1000mcmax50rps1000interval0.5alpha0.5gl_double_dueling_varres'
 
     infer_mdqn(3, model, args.resources, args.increment, args.debug)
     # infer_mdqn(3, 'variational_loading/variational_resources/variational_intervals/mdqn600ep500m25inc1000mcmax50rps500interval0.75alpha_double_dueling_pretrained', args.resources, args.increment, args.debug)
