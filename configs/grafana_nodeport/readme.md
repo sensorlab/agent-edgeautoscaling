@@ -1,0 +1,1 @@
+Edit grafana service with `microk8s kubectl edit svc stack-grafana -n metrics`
