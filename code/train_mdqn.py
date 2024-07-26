@@ -18,8 +18,8 @@ import torch.nn.functional as F
 from envs import DiscreteElasticityEnv
 import pandas as pd
 
-from spam_cluster import spam_requests_single
-from pod_controller import set_container_cpu_values
+from spam_cluster import get_response_latenices
+from pod_controller import set_container_cpu_values, get_loadbalancer_external_port
 from utils import save_training_data
 
 
@@ -192,18 +192,21 @@ if __name__ == '__main__':
     parser.add_argument('--episodes', type=int, default=300)
     parser.add_argument('--init_resources', type=int, default=500)
     parser.add_argument('--increment_action', type=int, default=25)
-    parser.add_argument('--alpha', type=float, default=0.4, help="Weight for the shared reward, higher the more weight to latency, lower the more weight to efficiency")
+    parser.add_argument('--alpha', type=float, default=5.0, help="Weight for the shared reward, higher the more weight to latency, lower the more weight to efficiency")
     parser.add_argument('--n_agents', type=int, default=3)
     parser.add_argument('--rps', type=int, default=50, help="Requests per second for loading cluster")
     parser.add_argument('--random_rps', type=bool, default=False, help="Train on random requests every episode")
     parser.add_argument('--interval', type=int, default=1000, help="Milliseconds interval for requests")
+    
+    parser.add_argument('--priority', type=int, default=0, help="Priority for the environment")
+    parser.add_argument('--reward_function', type=int, default=2, help="Setting for the reward function")
+
     parser.add_argument('--dueling', type=bool, default=False, help="Dueling rl")
     parser.add_argument('--double', type=bool, default=False, help="Double rl")
     parser.add_argument('--load_weights', type=bool, default=False, help="Load weights from previous training")
     parser.add_argument('--variable_resources', type=bool, default=False, help="Random resources every 10 episodes")
     parser.add_argument('--gamma_latency', type=float, default=0.5, help="Latency normalization")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
-    parser.add_argument('--old_reward', action='store_true', default=False, help="Use the old reward function")
     args = parser.parse_args()
 
     double = args.double
@@ -215,8 +218,10 @@ if __name__ == '__main__':
     variable_resources = args.variable_resources
 
     gamma_latency = args.gamma_latency
-    old_reward = args.old_reward
     debug = args.debug
+    rf = args.reward_function
+    priority = args.priority
+    alpha = args.alpha
 
     # MEMORY_SIZE = 1000
     MEMORY_SIZE = 500
@@ -231,14 +236,14 @@ if __name__ == '__main__':
     USERS = 10
     # reqs_per_second -= USERS # interval is set to 1s
 
-    # shared reward weight
-    alpha = args.alpha
 
     set_container_cpu_values(cpus=100)
 
     parent_dir = 'code/model_metric_data/dqn'
-    MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{RESOURCES}mcmax{reqs_per_second}rps{interval}interval{alpha}alpha{gamma_latency}gl'
-    suffixes = ['_double' if double else '', '_dueling' if dueling else '', '_varres' if variable_resources else '', 'old_r' if old_reward else '']
+    MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{rf}_rf_{reqs_per_second}rps{alpha}alpha'
+    if not variable_resources:
+        MODEL += f'{RESOURCES}res'
+    suffixes = ['_double' if double else '', '_dueling' if dueling else '', '_varres' if variable_resources else '']
     MODEL += ''.join(suffixes)
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
 
@@ -246,22 +251,36 @@ if __name__ == '__main__':
 
     n_agents = args.n_agents
     envs = [DiscreteElasticityEnv(i) for i in range(1, n_agents + 1)]
-    for env in envs:
+    other_envs = [[env for env in envs if env != envs[i]] for i in range(len(envs))] # For every env its other envs (pre-computing), used for priority and utilization
+
+    for i, env in enumerate(envs):
         env.MAX_CPU_LIMIT = RESOURCES
         env.INCREMENT = INCREMENT_ACTION
-        env.dqn_reward = old_reward
+        from train_ppo import set_other_priorities, set_other_utilization
+        set_other_utilization(env, other_envs[i])
+        set_other_priorities(env, other_envs[i])
 
-    # Get number of actions from gym action space
+    train_priority = False
+    match priority:
+        case 1:
+            envs[0].priority = 0.1
+            envs[1].priority = 1.0
+            envs[2].priority = 0.1
+        case 2:
+            envs[0].priority = 1.0
+            envs[1].priority = 0.1
+            envs[2].priority = 0.1
+        case _:
+            train_priority = True
+            print("Using default priority setting...")
+
     n_actions = envs[0].action_space.n
-    # Get the number of state observations
     state = envs[0].reset()
     n_observations = len(state) * len(state[0])
     print(f"Number of observations: {n_observations} and number of actions: {n_actions}")
 
-    # init envs
     set_available_resource(envs, RESOURCES)
 
-    # create networks
     if dueling:
         agents = [DuelingDQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
         target_nets = [DuelingDQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
@@ -276,7 +295,6 @@ if __name__ == '__main__':
 
     memories = [ReplayMemory(MEMORY_SIZE) for _ in range(n_agents)]
     optimizers = [optim.AdamW(agent.parameters(), lr=LR, amsgrad=True) for agent in agents]
-    # schedulers = [optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.1) for optimizer in optimizers]
 
     for target_net, agent in zip(target_nets, agents):
         target_net.load_state_dict(agent.state_dict())
@@ -285,32 +303,32 @@ if __name__ == '__main__':
     summed_rewards = []
     mean_latencies = []
     agents_summed_rewards = [[] for _ in range(n_agents)]
-    resource_dev = []
-
-    init_patience = 2 # every second episode if the agent is stuck
-    patiences = [init_patience for _ in range(n_agents)]
-
-    # url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}/predict"
-    url = f"http://localhost:30888/predict"
+    agents_mean_latenices = [[] for _ in range(n_agents)]
+    
+    url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}"
+    # url = f"http://localhost:30888/predict"
 
     for i_episode in tqdm(range(EPISODES)):
         if i_episode % 10 == 0 and i_episode != 0 and SAVE_WEIGHTS:
             for i, agent in enumerate(agents):
                 torch.save(agent.state_dict(), f'{parent_dir}/{MODEL}/ep_{i_episode}_agent_{i}.pth')
                 print(f"Checkpoint: Saved weights for agent {i}")
-        if variable_resources and i_episode % 10 == 0 and i_episode != 0:
+        if variable_resources and i_episode % 5 == 0:
             RESOURCES = random.choice([500, 750, 1000, 1250, 1500, 1750, 2000])
             for env in envs: 
                 env.MAX_CPU_LIMIT = RESOURCES
+                env.patch(100)
             print(f"Resources changed to {RESOURCES} for episode {i_episode}")
 
-        # randomize the requests per second to get rid of bias
-        random_rps = np.random.randint(5, reqs_per_second) if randomize_reqs else reqs_per_second
-        
-        # can overfill, so we reset the loading process on every episode
-        spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval), '--variable'])
-        print(f"Loading the cluster with {random_rps} requests per {interval} ms")
-        time.sleep(1) # for the limits to be set
+        if i_episode % 4 == 0 and train_priority:
+            for env in envs:
+                env.priority = random.randint(1, 10) / 10.0
+
+        command = ['python', 'code/spam_cluster.py', '--users', str(reqs_per_second), '--interval', str(interval), '--variable', '--all']
+        if randomize_reqs:
+            command.append('--random_rps')
+        spam_process = subprocess.Popen(command)
+
         states = [env.reset() for env in envs]
         set_available_resource(envs, RESOURCES)
         states = [torch.tensor(np.array(state).flatten(), dtype=torch.float32, device=device).unsqueeze(0) for state in states]
@@ -319,44 +337,34 @@ if __name__ == '__main__':
         ep_latencies = []
         agents_ep_reward = [[] for _ in range(n_agents)]
         ep_std = []
-
-        # max_allocated_env = max(envs, key=lambda env: env.ALLOCATED)
-        # others_cpu = np.mean([env.ALLOCATED for env in envs if env != max_allocated_env])
-
-        # if abs(max_allocated_env.ALLOCATED - others_cpu) > 200 and max_allocated_env.AVAILABLE <= 200:
-        #     patiences[envs.index(max_allocated_env)] -= 1
-        # else:
-        #     patiences[envs.index(max_allocated_env)] = init_patience
-
-        # if patiences[envs.index(max_allocated_env)] == 0:
-        #     print(f"Environment {max_allocated_env.pod_name} with max allocated resources is stuck at {max_allocated_env.ALLOCATED} resources, {max_allocated_env.AVAILABLE} available resources")
-        #     patiences[envs.index(max_allocated_env)] = init_patience
-        #     max_allocated_env.patch(100)
-        #     # max_allocated_env.reset()
-        #     set_available_resource(envs, RESOURCES)
-        #     print(f"Resources for the environment changed to {max_allocated_env.ALLOCATED}, available resources: {max_allocated_env.AVAILABLE}")
+        agents_ep_mean_latency = [[] for _ in range(n_agents)]
 
         for t in count():
             time.sleep(1)
             
-            latencies = spam_requests_single(USERS, url)
-            latency = np.mean([latency for latency in latencies if latency is not None])
+            latencies = [np.mean([latency for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict') if latency is not None]) for env in envs]
+            for i, latency in enumerate(latencies):
+                agents_ep_mean_latency[i].append(latency)
+
+            latency = np.mean(latencies) # Avg latency of all pods
             ep_latencies.append(latency)
 
-            if envs[0].dqn_reward:
-                shared_reward = 1 - latency * 10
-            else:
-                latency = min(latency, gamma_latency)
-                shared_reward = (gamma_latency - latency) / gamma_latency
+            priority_weighted_latency = sum((1 + env.priority) * latency for env, latency in zip(envs, latencies))
+            shared_reward = 1 - alpha * (priority_weighted_latency - 0.01)
 
             actions = [select_action(state, agent, env) for state, agent, env in zip(states, agents, envs)]
 
             next_states, rewards, dones = [], [], []
             resources = []
             for i, action in enumerate(actions):
-                # reward for efficiency
-                observation, reward, done, _ = envs[i].step(action.item())
+                set_other_utilization(envs[i], other_envs[i])
+                set_other_priorities(envs[i], other_envs[i])
+
+                observation, agent_reward, done, _ = envs[i].step(action.item(), rf)
                 set_available_resource(envs, RESOURCES) # heavy
+
+                reward = 0.5 * agent_reward + shared_reward
+                
                 next_states.append(np.array(observation).flatten())
                 rewards.append(reward)
                 dones.append(done)
@@ -364,31 +372,21 @@ if __name__ == '__main__':
                 if done:
                     next_states[i] = None
 
-                if debug:
-                    print(f"Agent {envs[i].id}, ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, AVAILABLE: {envs[i].AVAILABLE}, reward: {alpha * rewards[i] + (1 - alpha) * shared_reward:.2f} state(limit, usage, others): {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {rewards[i]:.2f}")
-            if debug:
+                if debug or t % envs[i].MAX_STEPS / 2 == 0:
+                    print(f"{envs[i].id}: ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
+            if debug or t % envs[i].MAX_STEPS / 2 == 0:
                 print()
         
-            resource_std_dev = np.std(resources) / 500
-            ep_std.append(resource_std_dev)
-            shared_rewards = [alpha * agent_reward + (1 - alpha) * shared_reward for agent_reward in rewards]
-            # shared_rewards = [alpha * reward + (1 - alpha) * shared_reward - resource_std_dev for reward in rewards]
+            [agents_ep_reward[i].append(rewards[i]) for i in range(n_agents)]
+            [agents_mean_latenices[i].append(np.mean(latency)) for i, latency in enumerate(agents_ep_mean_latency)]
 
-            if t % 25 == 0 and t != 0:
-                print(f"SharedR A*r+B*L: {shared_rewards}, reward_part: {rewards}, latency_part: {latency}, resource deviation: {resource_std_dev}. Step: {t}")
-                for env in envs:
-                    print(f"Agent {env.id}: {env.last_cpu_percentage} % CPU, AVAILABLE: {env.AVAILABLE}", end=" ")
-                print()
-
-            [agents_ep_reward[i].append(shared_rewards[i]) for i in range(n_agents)]
-
-            ep_rewards += np.mean(shared_rewards)
+            ep_rewards += np.mean(rewards)
 
             next_states = [torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0) if observation is not None else None for observation in next_states]
-            shared_reward_tensors = [torch.tensor([shared_reward], device=device) for shared_reward in shared_rewards]
+            reward_tensors = [torch.tensor([reward], device=device) for reward in rewards]
 
             for i in range(n_agents):
-                memories[i].push(states[i], actions[i], next_states[i], shared_reward_tensors[i])
+                memories[i].push(states[i], actions[i], next_states[i], reward_tensors[i])
 
             states = next_states
             for i in range(n_agents):
@@ -402,26 +400,21 @@ if __name__ == '__main__':
                 target_net.load_state_dict(target_net_state_dict)
 
             if any(dones):
-                # for env in envs:
-                #     env.save_last_limit()
                 break
         
         mean_latencies.append(np.mean(ep_latencies))
         summed_rewards.append(ep_rewards)
-        resource_dev.append(np.mean(ep_std))
         
         [agents_summed_rewards[i].append(np.sum(reward)) for i, reward in enumerate(agents_ep_reward)]
         print(f"Episode {i_episode} reward: {ep_rewards} mean latency: {np.mean(ep_latencies)}")
 
-        print("Cleaning up remaining requests...")
-        # HACK INCOMING
         spam_process.terminate()
         set_container_cpu_values(1000)
         for i in range(n_agents):
             while True:
                 (_, _, cpu_percentage), (_, _, _), (_, _), _ = envs[i].node.get_container_usage(envs[i].container_id)
                 if cpu_percentage > 20:
-                    time.sleep(5)
+                    time.sleep(1.5)
                 else:
                     break
 
@@ -434,4 +427,4 @@ if __name__ == '__main__':
         for i, agent in enumerate(agents):
             torch.save(agent.state_dict(), f'{parent_dir}/{MODEL}/model_weights_agent_{i}.pth')
     
-        save_training_data(f'{parent_dir}/{MODEL}', summed_rewards, mean_latencies, agents_summed_rewards, resource_dev)
+        save_training_data(f'{parent_dir}/{MODEL}', summed_rewards, mean_latencies, agents_summed_rewards, agents_mean_latenices=agents_mean_latenices)

@@ -35,13 +35,15 @@ class BaseElasticityEnv(Env):
                     self.node = node
                     break
 
-        self.other_avg_util = 0.0
+        self.other_util = 0.0
         self.STATE_LENTGH = 6
-        # self.states_fifo = [[0, 0, 0] for _ in range(self.STATE_LENTGH)]
-        self.states_fifo = [[0, 0, 0, 0] for _ in range(self.STATE_LENTGH)]
+        self.states_fifo = [[0, 0, 0, 0, 0, 0, 0] for _ in range(self.STATE_LENTGH)]
+        # self.states_fifo = [[0, 0, 0, 0] for _ in range(self.STATE_LENTGH)]
 
         self.last_cpu_percentage = 0
         self.previous_cpu_percentage = 0
+        self.priority = 1.0
+        self.other_priorities = 0.0
         
         self.state = self.get_current_usage()
         self.observation_space = spaces.Box(low=np.float32(0), high=np.float32(1), shape=(self.STATE_LENTGH * len(self.state[0]),))
@@ -66,8 +68,8 @@ class BaseElasticityEnv(Env):
 
         available_normed = self.norm_cpu(self.AVAILABLE)
         # state = [n_cpu_limit, n_cpu, available_normed]
-        state = [n_cpu_limit, n_cpu, available_normed, cpu_percentage / 100]
-        # state = [n_cpu_limit, n_cpu, available_normed, self.other_avg_util / 100]
+        state = [n_cpu_limit, n_cpu, available_normed, cpu_percentage / 100, self.other_util / 100, self.priority, self.other_priorities]
+        # state = [n_cpu_limit, n_cpu, available_normed, self.last_cpu_percentage / 100]
 
         self.states_fifo.append(state)
         self.states_fifo.pop(0)
@@ -228,18 +230,21 @@ class InstantContinuousElasticityEnv(BaseElasticityEnv):
 
     def step(self, action, rf):
         self.state = self.get_current_usage()
-
         action = np.clip(action, self.action_space.low, self.action_space.high)
-
         scale_action = action[0] * self.MAX_CPU_LIMIT
-        if scale_action <= max(self.AVAILABLE, 0): # If available is negative
+
+        if scale_action < self.ALLOCATED or scale_action <= max(self.AVAILABLE, 0):
             new_resource_limit = int(max(scale_action, self.MIN_CPU_LIMIT))
             self.ALLOCATED = new_resource_limit
-            patch_pod(self.pod_name, cpu_request=f"{new_resource_limit}m", cpu_limit=f"{new_resource_limit}m", container_name=self.container_name, debug=self.debug_deployment)
-
+            patch_pod(
+                self.pod_name,
+                cpu_request=f"{new_resource_limit}m",
+                cpu_limit=f"{new_resource_limit}m",
+                container_name=self.container_name,
+                debug=self.debug_deployment
+            )
+        
         reward = self.calculate_agent_reward(rf)
-
         self.steps += 1
         done = self.steps >= self.MAX_STEPS
-
         return self.state, reward, done, 0

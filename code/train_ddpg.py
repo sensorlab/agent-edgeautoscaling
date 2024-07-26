@@ -1,6 +1,7 @@
-from envs import ContinuousElasticityEnv
-from spam_cluster import spam_requests_single
-from pod_controller import set_container_cpu_values
+from envs import ContinuousElasticityEnv, InstantContinuousElasticityEnv
+from train_ppo import set_other_priorities, set_other_utilization
+from spam_cluster import get_response_latenices
+from pod_controller import set_container_cpu_values, get_loadbalancer_external_port
 from utils import save_training_data
 
 import os
@@ -127,8 +128,9 @@ class Critic(nn.Module):
 
 
 class Actor(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, learning_rate=3e-4):
+    def __init__(self, input_size, hidden_size, output_size, learning_rate=3e-4, sigmoid_output=False):
         super(Actor, self).__init__()
+        self.sigmoid_output = sigmoid_output
         self.linear1 = nn.Linear(input_size, hidden_size)
         self.linear2 = nn.Linear(hidden_size, hidden_size * 2)
         self.linear3 = nn.Linear(hidden_size * 2, hidden_size * 2)
@@ -143,12 +145,12 @@ class Actor(nn.Module):
         x = F.relu(self.linear2(x))
         x = F.relu(self.linear3(x))
         x = F.relu(self.linear4(x))
-        x = torch.tanh(self.linear5(x))
+        x = torch.sigmoid(self.linear5(x)) if self.sigmoid_output else torch.tanh(self.linear5(x))
         return x
 
 
 class DDPGagent():
-    def __init__(self, env, hidden_size=256, actor_learning_rate=3e-4, critic_learning_rate=1e-3, gamma=0.99, tau=1e-2, max_memory_size=50000):
+    def __init__(self, env, hidden_size=256, actor_learning_rate=3e-4, critic_learning_rate=1e-3, gamma=0.99, tau=1e-2, max_memory_size=50000, sigmoid_output=False):
         # Params
         self.num_states = env.observation_space.shape[0]
         self.num_actions = env.action_space.shape[0]
@@ -156,8 +158,8 @@ class DDPGagent():
         self.tau = tau
 
         # Networks
-        self.actor = Actor(self.num_states, hidden_size, self.num_actions)
-        self.actor_target = Actor(self.num_states, hidden_size, self.num_actions)
+        self.actor = Actor(self.num_states, hidden_size, self.num_actions, sigmoid_output)
+        self.actor_target = Actor(self.num_states, hidden_size, self.num_actions, sigmoid_output)
         self.critic = Critic(self.num_states + self.num_actions, hidden_size, self.num_actions)
         self.critic_target = Critic(self.num_states + self.num_actions, hidden_size, self.num_actions)
 
@@ -170,8 +172,8 @@ class DDPGagent():
         # Training
         self.memory = Memory(max_memory_size)
         self.critic_criterion = nn.MSELoss()
-        self.actor_optimizer = optim.AdamW(self.actor.parameters(), lr=actor_learning_rate, weight_decay=1e-5)
-        self.critic_optimizer = optim.AdamW(self.critic.parameters(), lr=critic_learning_rate, weight_decay=1e-5)
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_learning_rate)
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=critic_learning_rate)
 
     def get_action(self, state):
         state = Variable(torch.from_numpy(state).float().unsqueeze(0))
@@ -250,17 +252,20 @@ if __name__ == "__main__":
     parser.add_argument('--scale_action', type=int, default=50, help="How much does the agent scale with an action")
     parser.add_argument('--load_weights', type=str, default=False, help="Load weights from previous training with a string of the model parent directory")
 
+    parser.add_argument('--priority', type=int, default=0, help="Options: 0, 1, 2")
+
     parser.add_argument('--make_checkpoints', action='store_true', default=False, help="Save weights every 5 episodes")
     parser.add_argument('--random_rps', action='store_true', default=False, help="Train on random requests every episode")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
     parser.add_argument('--variable_resources', action='store_true', default=False, help="Random resources every 10 episodes")
     parser.add_argument('--old_reward', action='store_true', default=False, help="Use the old reward function")
+    parser.add_argument('--instant', action='store_true', default=False, help="Use instant scaling elasticity environemnt")
     args = parser.parse_args()
 
     SAVE_WEIGHTS = True # Always save weightsB)
     weights_dir = args.load_weights
     RESOURCES = args.init_resources
-    alpha = args.alpha
+    ALPHA_CONSTANT = args.alpha
     episodes = args.episodes
     variable_resources = args.variable_resources
     interval = args.interval
@@ -274,18 +279,41 @@ if __name__ == "__main__":
     min_rps = args.min_rps
     make_checkpoints = args.make_checkpoints
     old_reward = args.old_reward
+    instant = args.instant
+    priority = args.priority
 
-    url = f"http://localhost:30888/predict"
+    url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}"
+    # url = f"http://localhost:30888/predict"
     USERS = 10
 
-    envs = [ContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
-    for env in envs:
+    if instant:
+        envs = [InstantContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
+    else:
+        envs = [ContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
+
+    other_envs = [[env for env in envs if env != envs[i]] for i in range(len(envs))] # For every env its other envs (pre-computing), used for priority and utilization
+    for i, env in enumerate(envs):
         env.MAX_CPU_LIMIT = RESOURCES
         env.DEBUG = False
         env.scale_action = scale_action
-        env.dqn_reward = old_reward
+        set_other_utilization(env, other_envs[i])
+        set_other_priorities(env, other_envs[i])
 
-    agents = [DDPGagent(env, hidden_size=64, max_memory_size=500) for env in envs]
+    train_priority = False
+    match priority:
+        case 1:
+            envs[0].priority = 0.1
+            envs[1].priority = 1.0
+            envs[2].priority = 0.1
+        case 2:
+            envs[0].priority = 1.0
+            envs[1].priority = 0.1
+            envs[2].priority = 0.1
+        case _:
+            train_priority = True
+            print("Using default priority setting...")
+
+    agents = [DDPGagent(env, hidden_size=64, max_memory_size=1000, sigmoid_output=instant) for env in envs]
     # decay_period = envs[0].MAX_STEPS * episodes / 1.1 # Makes sense for now
     decay_period = envs[0].MAX_STEPS * episodes / 2
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]
@@ -295,19 +323,24 @@ if __name__ == "__main__":
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=1250) for env in envs]
 
     parent_dir = 'code/model_metric_data/ddpg'
-    MODEL = f'{episodes}ep{RESOURCES}resources{reqs_per_second}rps{interval}interval{alpha}alpha{scale_action}scale_a{gamma_latency}gl'
+    MODEL = f'{episodes}ep_2rf_{reqs_per_second}rps{ALPHA_CONSTANT}alpha'
+    if instant:
+        MODEL += '_instant'
+    if not variable_resources:
+        MODEL += f"{RESOURCES}resources"
     if weights_dir:
         [agent.load_model(f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_actor.pth", f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
         print(f"Successfully loaded weights from {parent_dir}/{weights_dir}")
         MODEL += "_pretrained"
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
 
-    print(f"Training {n_agents} agents for {episodes} episodes with {RESOURCES} resources, {reqs_per_second} requests per second, {interval} ms interval, {alpha} alpha, {bs} batch size\nModel name {MODEL}, OUNoise decay period {decay_period}\n")
+    print(f"Training {n_agents} agents for {episodes} episodes with {RESOURCES} resources, {reqs_per_second} requests per second, {interval} ms interval, {ALPHA_CONSTANT} alpha, {bs} batch size\nModel name {MODEL}, OUNoise decay period {decay_period}\n")
 
     rewards = []
     avg_rewards = []
     mean_latencies = []
     agents_summed_rewards = [[] for _ in range(n_agents)]
+    agents_mean_latenices = [[] for _ in range(n_agents)]
 
     set_container_cpu_values(100)
     set_available_resource(envs, RESOURCES)
@@ -323,12 +356,17 @@ if __name__ == "__main__":
             RESOURCES = random.choice([500, 750, 1000, 1250, 1500, 1750, 2000])
             for env in envs:
                 env.MAX_CPU_LIMIT = RESOURCES
+                env.patch(100)
             print(f"Resources changed to {RESOURCES} for episode {episode}")
 
-        random_rps = np.random.randint(min_rps, reqs_per_second) if randomize_reqs else reqs_per_second
-        
-        spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval), '--variable'])
-        print(f"Loading cluster with {random_rps} requests per second")
+        if episode % 4 == 0 and train_priority:
+            for env in envs:
+                env.priority = random.randint(1, 10) / 10.0
+
+        command = ['python', 'code/spam_cluster.py', '--users', str(reqs_per_second), '--interval', str(interval), '--variable', '--all']
+        if randomize_reqs:
+            command.append('--random_rps')
+        spam_process = subprocess.Popen(command)
         
         states = [np.array(env.reset()).flatten() for env in envs]
         set_available_resource(envs, RESOURCES)
@@ -338,21 +376,19 @@ if __name__ == "__main__":
         ep_latencies = []
         ep_rewards = []
         agents_ep_reward = [[] for _ in range(n_agents)]
+        agents_ep_mean_latency = [[] for _ in range(n_agents)]
 
         for step in range(envs[0].MAX_STEPS):
             time.sleep(1)
             agents_step_rewards = []
 
-            latencies = spam_requests_single(USERS, url)
-            latency = np.mean([latency for latency in latencies if latency is not None])
-            ep_latencies.append(latency)
+            latencies = [np.mean([latency for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict') if latency is not None]) for env in envs]
+            for i, latency in enumerate(latencies):
+                agents_ep_mean_latency[i].append(latency)
+            latency = np.mean(latencies) # Avg latency of all pods
 
-            shared_reward = (1 - 10 * (latency - 0.01))
-            # if envs[0].dqn_reward:
-            #     shared_reward = 1 - latency * 10
-            # else:
-            #     latency = min(latency, gamma_latency)
-            #     shared_reward = (gamma_latency - latency) / gamma_latency
+            priority_weighted_latency = sum((1 + env.priority) * latency for env, latency in zip(envs, latencies))
+            shared_reward = 1 - ALPHA_CONSTANT * (priority_weighted_latency - 0.01)
 
             actions, new_states, dones = [], [], []
             for i, agent in enumerate(agents):
@@ -362,6 +398,9 @@ if __name__ == "__main__":
                 actions.append(action)
 
             for i, env in enumerate(envs):
+                set_other_utilization(envs[i], other_envs[i])
+                set_other_priorities(envs[i], other_envs[i])
+
                 new_state, agent_reward, done, _ = env.step(actions[i], 2)
                 new_state = np.array(new_state).flatten()
                 set_available_resource(envs, RESOURCES)
@@ -376,29 +415,22 @@ if __name__ == "__main__":
                 if len(agents[i].memory) > bs:
                     agents[i].update(bs)
                 agents_step_rewards.append(reward)
-                if debug:
-                    print(f"Agent {env.id}, ACTION: {actions[i]}, LIMIT: {env.ALLOCATED}, AVAILABLE: {env.AVAILABLE}, reward: {reward} state(limit, usage, others): {env.state[-1]}, shared_reward: {shared_reward}, agent_reward: {agent_reward}")
+                if debug or step % envs[i].MAX_STEPS / 2 == 0:
+                    print(f"{envs[i].id}: ACTION: {actions[i]}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
             if debug:
                 print()
 
             states = new_states
             
-            if step % 30 == 0 and step != 0:
-                print(f"Shared: {agents_step_rewards}, latency: {latency}")
-                for env in envs:
-                    print(f"Agent {env.id}: {env.last_cpu_percentage} % CPU, AVAILABLE: {env.AVAILABLE}", end=". ")
-                print()
-
             ep_rewards.append(np.mean(agents_step_rewards))
 
             if any(dones):
-                # for env in envs:
-                #     env.save_last_limit()
                 break
         
         mean_latencies.append(np.mean(ep_latencies))
         rewards.append(sum(ep_rewards))
         [agents_summed_rewards[i].append(np.sum(reward)) for i, reward in enumerate(agents_ep_reward)]
+        [agents_mean_latenices[i].append(np.mean(latency)) for i, latency in enumerate(agents_ep_mean_latency)]
 
         spam_process.terminate()
         set_container_cpu_values(1000)
@@ -406,7 +438,7 @@ if __name__ == "__main__":
             while True:
                 (_, _, cpu_percentage), (_, _, _), (_, _), _ = envs[i].node.get_container_usage(envs[i].container_id)
                 if cpu_percentage > 20:
-                    time.sleep(5)
+                    time.sleep(1.5)
                 else:
                     break
         
@@ -419,4 +451,4 @@ if __name__ == "__main__":
         for i, agent in enumerate(agents):
             agent.save_model(f"{parent_dir}/{MODEL}/agent_{i}")
         
-        save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_latencies, agents_summed_rewards)
+        save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_latencies, agents_summed_rewards, agents_mean_latenices=agents_mean_latenices)

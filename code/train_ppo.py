@@ -1,6 +1,6 @@
 from envs import ContinuousElasticityEnv, DiscreteElasticityEnv, InstantContinuousElasticityEnv
-from spam_cluster import spam_requests_single
-from pod_controller import set_container_cpu_values
+from spam_cluster import get_response_latenices
+from pod_controller import set_container_cpu_values, get_loadbalancer_external_port
 from utils import save_training_data
 
 import os
@@ -42,7 +42,7 @@ class RolloutBuffer:
 
 
 class ActorCritic(nn.Module):
-    def __init__(self, state_dim, action_dim, has_continuous_action_space, action_std_init, hidden_size=64):
+    def __init__(self, state_dim, action_dim, has_continuous_action_space, action_std_init, sigmoid_output=False, hidden_size=64):
         super(ActorCritic, self).__init__()
 
         self.has_continuous_action_space = has_continuous_action_space
@@ -51,38 +51,42 @@ class ActorCritic(nn.Module):
             self.action_dim = action_dim
             self.action_var = torch.full((action_dim,), action_std_init * action_std_init).to(device)
 
-        dropout = 0.1
+        # dropout = 0.1
         if has_continuous_action_space:
             self.actor = nn.Sequential(
                             nn.Linear(state_dim, hidden_size),
                             nn.ReLU(),
-                            nn.Dropout(dropout),
+                            # nn.Dropout(dropout),
                             nn.Linear(hidden_size, hidden_size * 2),
                             nn.ReLU(),
-                            nn.Dropout(dropout),
+                            # nn.Dropout(dropout),
                             nn.Linear(hidden_size * 2, hidden_size * 2),
                             nn.ReLU(),
-                            nn.Dropout(dropout),
+                            # nn.Dropout(dropout),
                             nn.Linear(hidden_size * 2, hidden_size),
                             nn.ReLU(),
-                            nn.Dropout(dropout),
+                            # nn.Dropout(dropout),
                             nn.Linear(hidden_size, action_dim),
-                            nn.Tanh()
                         )
+            if sigmoid_output:
+                self.actor.add_module('7', nn.Sigmoid())
+            else:
+                self.actor.add_module('7', nn.Tanh())
+            
         else:
             self.actor = nn.Sequential(
                             nn.Linear(state_dim, hidden_size),
                             nn.ReLU(),
-                            nn.Dropout(dropout),
+                            # nn.Dropout(dropout),
                             nn.Linear(hidden_size, hidden_size * 2),
                             nn.ReLU(),
-                            nn.Dropout(dropout),
+                            # nn.Dropout(dropout),
                             nn.Linear(hidden_size * 2, hidden_size * 2),
                             nn.ReLU(),
-                            nn.Dropout(dropout),
+                            # nn.Dropout(dropout),
                             nn.Linear(hidden_size * 2, hidden_size),
                             nn.ReLU(),
-                            nn.Dropout(dropout),
+                            # nn.Dropout(dropout),
                             nn.Linear(hidden_size, action_dim),
                             nn.Softmax(dim=-1)
                         )
@@ -90,16 +94,16 @@ class ActorCritic(nn.Module):
         self.critic = nn.Sequential(
                         nn.Linear(state_dim, hidden_size),
                         nn.ReLU(),
-                        nn.Dropout(dropout),
+                        # nn.Dropout(dropout),
                         nn.Linear(hidden_size, hidden_size * 2),
                         nn.ReLU(),
-                        nn.Dropout(dropout),
+                        # nn.Dropout(dropout),
                         nn.Linear(hidden_size * 2, hidden_size * 2),
                         nn.ReLU(),
-                        nn.Dropout(dropout),
+                        # nn.Dropout(dropout),
                         nn.Linear(hidden_size * 2, hidden_size),
                         nn.ReLU(),
-                        nn.Dropout(dropout),
+                        # nn.Dropout(dropout),
                         nn.Linear(hidden_size, 1)
                     )
 
@@ -149,7 +153,7 @@ class ActorCritic(nn.Module):
 
 
 class PPO:
-    def __init__(self, env, has_continuous_action_space, eps_clip=0.2, action_std_init=0.6, lr_actor=0.0003, lr_critic=0.001, gamma=0.99, K_epochs=40):
+    def __init__(self, env, has_continuous_action_space, eps_clip=0.2, action_std_init=0.6, lr_actor=0.0003, lr_critic=0.001, gamma=0.99, K_epochs=40, sigmoid_output=False):
         state_dim = env.observation_space.shape[0]
         if has_continuous_action_space:
             action_dim = env.action_space.shape[0]
@@ -167,13 +171,13 @@ class PPO:
         
         self.buffer = RolloutBuffer()
 
-        self.policy = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device)
+        self.policy = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init, sigmoid_output=sigmoid_output).to(device)
         self.optimizer = torch.optim.Adam([
                         {'params': self.policy.actor.parameters(), 'lr': lr_actor},
                         {'params': self.policy.critic.parameters(), 'lr': lr_critic}
                     ])
 
-        self.policy_old = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device)
+        self.policy_old = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init, sigmoid_output=sigmoid_output).to(device)
         self.policy_old.load_state_dict(self.policy.state_dict())
         
         self.MseLoss = nn.MSELoss()
@@ -199,6 +203,8 @@ class PPO:
         with torch.no_grad():
             state = torch.FloatTensor(state).to(device)
             action, action_logprob, state_val = self.policy_old.act(state)
+        # clip action to env?
+        # action = torch.clamp(action, 0, 1)
 
         self.buffer.states.append(state)
         self.buffer.actions.append(action)
@@ -290,12 +296,17 @@ def set_available_resource(envs, initial_resources):
     for env in envs:
         env.AVAILABLE = max_group
 
+def set_other_utilization(env, other_envs):
+    env.other_util = np.mean([o_env.last_cpu_percentage for o_env in other_envs])
+
+def set_other_priorities(env, other_envs):
+    env.other_priorities = np.mean([o_env.priority for o_env in other_envs])
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--episodes', type=int, default=300)
     parser.add_argument('--init_resources', type=int, default=1000, help="Cpu resoruces given to the cluster")
-    parser.add_argument('--alpha', type=float, default=0.75, help="Weight for the shared reward, higher the more weight to latency, lower the more weight to efficiency")
+    parser.add_argument('--alpha', type=float, default=5, help="Weight for the shared reward")
     parser.add_argument('--n_agents', type=int, default=3)
     parser.add_argument('--rps', type=int, default=50, help="Baseline bound of requests per second for loading cluster, if random, it is the upper bound")
     parser.add_argument('--min_rps', type=int, default=10, help="Minimum Requests per second for loading cluster, if the random requests are enabled")
@@ -307,19 +318,22 @@ if __name__ == "__main__":
     parser.add_argument('--k_epochs', type=int, default=10, help="K-epochs for ppo training")
     parser.add_argument('--reward_function', type=int, default=1, help="Options: 1, 2, 3, 4, 5...")
 
+    parser.add_argument('--priority', type=int, default=0, help="Options: 0, 1, 2")
+
     parser.add_argument('--make_checkpoints', action='store_true', default=False, help="Save weights every 5 episodes")
     parser.add_argument('--random_rps', action='store_true', default=False, help="Train on random requests every episode")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
-    parser.add_argument('--variable_resources', action='store_true', default=False, help="Random resources every 10 episodes")
-    parser.add_argument('--old_reward', action='store_true', default=False, help="Use the old reward function")
+    parser.add_argument('--variable_resources', action='store_true', default=False, help="Random choice of [500, 750, 1000, 1250, 1500, 1750, 2000] resource every 5th episode")
     parser.add_argument('--discrete', action='store_true', default=False, help="Use discrete actions")
     parser.add_argument('--instant', action='store_true', default=False, help="Scale directly to value")
+
+    parser.add_argument('--reset_env', action='store_true', default=False, help="Resetting the env every 4th episode")
     args = parser.parse_args()
 
     SAVE_WEIGHTS = True # Always save weightsB)
     weights_dir = args.load_weights
     RESOURCES = args.init_resources
-    alpha = args.alpha
+    ALPHA_CONSTANT = args.alpha
     episodes = args.episodes
     variable_resources = args.variable_resources
     interval = args.interval
@@ -331,36 +345,54 @@ if __name__ == "__main__":
     scale_action = args.scale_action
     min_rps = args.min_rps
     make_checkpoints = args.make_checkpoints
-    old_reward = args.old_reward
     batch_size = args.batch_size
     discrete = args.discrete
     reward_function = args.reward_function
     k_epochs = args.k_epochs
     instant = args.instant
+    reset_env = args.reset_env
+    priority = args.priority
 
-    url = f"http://localhost:30888/predict"
+    url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}"
     USERS = 10
 
     if discrete:
         envs = [DiscreteElasticityEnv(i) for i in range(1, n_agents + 1)]
         increment_action = 25
         for env in envs:
-            env.MAX_CPU_LIMIT = RESOURCES
-            env.DEBUG = False
             env.INCREMENT = increment_action
-            env.dqn_reward = old_reward
     else:
         if instant:
             envs = [InstantContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
         else:
             envs = [ContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
 
-        for env in envs:
-            env.MAX_CPU_LIMIT = RESOURCES
-            env.DEBUG = False
+        for i, env in enumerate(envs):
             env.scale_action = scale_action
-            env.dqn_reward = old_reward
-    
+
+    other_envs = [[env for env in envs if env != envs[i]] for i in range(len(envs))] # For every env its other envs (pre-computing), used for priority and utilization
+
+    for i, env in enumerate(envs):
+        env.MAX_CPU_LIMIT = RESOURCES
+        env.DEBUG = False
+        set_other_utilization(env, other_envs[i])
+        set_other_priorities(env, other_envs[i])
+
+    train_priority = False
+    match priority:
+        case 1:
+            envs[0].priority = 0.1
+            envs[1].priority = 1.0
+            envs[2].priority = 0.1
+        case 2:
+            envs[0].priority = 1.0
+            envs[1].priority = 0.1
+            envs[2].priority = 0.1
+        case 0:
+            train_priority = True
+        case _:
+            print("Using default priority setting...")
+
     total_steps = envs[0].MAX_STEPS * episodes
     update_timestep = envs[0].MAX_STEPS * 3
     initial_action_std = 0.5
@@ -370,32 +402,41 @@ if __name__ == "__main__":
 
     time_step = 0
 
-    agents = [PPO(env, has_continuous_action_space=not discrete, action_std_init=initial_action_std, K_epochs=k_epochs) for env in envs]
+    agents = [PPO(env, has_continuous_action_space=not discrete, action_std_init=initial_action_std, K_epochs=k_epochs, sigmoid_output=instant) for env in envs]
     # Set dropout to training mode
     for agent in agents:
         agent.policy.train()
         agent.policy_old.train()
 
     parent_dir = 'code/model_metric_data/ppo'
-    MODEL = f'{episodes}ep{RESOURCES}resources_rf_{reward_function}_{reqs_per_second}rps{interval}interval{k_epochs}kepochs{alpha}alpha{scale_action}scale_a{gamma_latency}gl'
-    if old_reward:
-        MODEL += "old_r"
+    # MODEL = f'{episodes}ep{RESOURCES}resources_rf_{reward_function}_{reqs_per_second}rps{interval}interval{k_epochs}kepochs{ALPHA_CONSTANT}alpha{scale_action}scale_a{priority}priority'
+    MODEL = f'{episodes}ep_rf_{reward_function}_{reqs_per_second}rps{k_epochs}kepochs{int(ALPHA_CONSTANT)}alpha{scale_action}scale_a{priority}priority_newloading'
     if discrete:
         MODEL += '_discrete'
     if instant:
         MODEL += '_instantscale'
+    if not reset_env:
+        MODEL += '_NOreseting'
+    if reward_function == 42:
+        MODEL += f'{gamma_latency}gl'
+    # No need to specify resources if they are variable
+    if variable_resources:
+        MODEL += '_vari_res'
+    else:
+        MODEL += f'_{RESOURCES}resources'
     if weights_dir:
         [agent.load(f"{parent_dir}/{weights_dir}/agent_{i}.pth") for i, agent in enumerate(agents)]
         print(f"Successfully loaded weights from {parent_dir}/{weights_dir}")
         MODEL += "_pretrained"
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
 
-    print(f"Training {n_agents} agents for {episodes} episodes with {RESOURCES} resources, {reqs_per_second} requests per second, {interval} ms interval, {alpha} alpha\nModel name {MODEL}\n")
+    print(f"Training {n_agents} agents for {episodes} episodes with {RESOURCES} resources, {reqs_per_second} requests per second, {interval} ms interval, {ALPHA_CONSTANT} alpha\nModel name {MODEL}\n")
 
     rewards = []
     avg_rewards = []
     mean_latencies = []
     agents_summed_rewards = [[] for _ in range(n_agents)]
+    agents_mean_latenices = [[] for _ in range(n_agents)]
 
     init_patience = 20 # every second episode if the agent is stuck
     patiences = [init_patience for _ in range(n_agents)]
@@ -418,16 +459,22 @@ if __name__ == "__main__":
             RESOURCES = random.choice([500, 750, 1000, 1250, 1500, 1750, 2000])
             for env in envs:
                 env.MAX_CPU_LIMIT = RESOURCES
+                env.patch(100) # It can happen that they have allocated more than available and be stuck, so patch them in case
             print(f"Resources changed to {RESOURCES} for episode {episode}")
 
-        if episode % 4 == 0:
+        if episode % 4 == 0 and train_priority:
             for env in envs:
-                env.patch(100)
+                env.priority = random.randint(1, 10) / 10.0
+                # if reset_env:
+                #     env.patch(100)
 
-        random_rps = np.random.randint(min_rps, reqs_per_second) if randomize_reqs else reqs_per_second
+        # random_rps = np.random.randint(min_rps, reqs_per_second) if randomize_reqs else reqs_per_second
+        # In this training the random rps is handled by the loading script
         
-        spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval), '--variable'])
-        print(f"Loading cluster with {random_rps} requests per second")
+        command = ['python', 'code/spam_cluster.py', '--users', str(reqs_per_second), '--interval', str(interval), '--variable', '--all']
+        if randomize_reqs:
+            command.append('--random_rps')
+        spam_process = subprocess.Popen(command)
         
         states = [np.array(env.reset()).flatten() for env in envs]
         set_available_resource(envs, RESOURCES)
@@ -435,29 +482,36 @@ if __name__ == "__main__":
         ep_latencies = []
         ep_rewards = []
         agents_ep_reward = [[] for _ in range(n_agents)]
+        agents_ep_mean_latency = [[] for _ in range(n_agents)]
 
         for step in range(envs[0].MAX_STEPS):
             time.sleep(1)
             time_step += 1
             agents_step_rewards = []
 
-            latencies = spam_requests_single(USERS, url)
-            latency = np.mean([latency for latency in latencies if latency is not None])
+            # latencies = get_reponse_latencies(USERS, url)
+            # latency = np.mean([latency for latency in latencies if latency is not None])
+
+            # Separate avg latecy for every pod/env/agent/container in the cluster
+            latencies = [np.mean([latency for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict') if latency is not None]) for env in envs]
+
+            for i, latency in enumerate(latencies):
+                agents_ep_mean_latency[i].append(latency)
+
+            latency = np.mean(latencies) # Avg latency of all pods
+            # print(f"Step {step} avg latency: {latency:.2f} of {latencies}")
 
             all_steps_latencies.append(latency)
             ep_latencies.append(latency)
 
-            # if envs[0].dqn_reward:
-            #     shared_reward = 1 - latency * 10
-            # else:
-            #     latency = min(latency, gamma_latency)
-            #     shared_reward = (gamma_latency - latency) / gamma_latency
-            
             match reward_function:
-                case 1:
-                    shared_reward = - latency * 10
-                case 2:
-                    shared_reward = (1 - 10 * (latency - 0.01))
+                case 1 | 2:
+                #     shared_reward = - latency * 10
+                # case 2:
+                    # shared_reward = (1 - 10 * (latency - 0.01))
+
+                    priority_weighted_latency = sum((1 + env.priority) * latency for env, latency in zip(envs, latencies))
+                    shared_reward = 1 - ALPHA_CONSTANT * (priority_weighted_latency - 0.01)
                 case 3:
                     shared_reward = (1 - 10 * latency)
                 case 4:
@@ -475,6 +529,9 @@ if __name__ == "__main__":
 
             actions, new_states, dones = [], [], []
             for i, agent in enumerate(agents):
+                set_other_utilization(envs[i], other_envs[i])
+                set_other_priorities(envs[i], other_envs[i])
+
                 action = agent.select_action(states[i])
 
                 new_state, agent_reward, done, _ = envs[i].step(action, reward_function)
@@ -503,7 +560,7 @@ if __name__ == "__main__":
                     agent.decay_action_std(action_std_decay_rate, min_action_std)
                 
                 if debug or time_step % envs[i].MAX_STEPS / 2 == 0:
-                    print(f"Agent {envs[i].id}, ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state(limit, usage, others): {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
+                    print(f"{envs[i].id}: ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
             if debug or time_step % envs[i].MAX_STEPS / 2 == 0:
                 print()
 
@@ -516,6 +573,7 @@ if __name__ == "__main__":
         mean_latencies.append(np.mean(ep_latencies))
         rewards.append(sum(ep_rewards))
         [agents_summed_rewards[i].append(np.sum(reward)) for i, reward in enumerate(agents_ep_reward)]
+        [agents_mean_latenices[i].append(np.mean(latency)) for i, latency in enumerate(agents_ep_mean_latency)]
 
         spam_process.terminate()
         set_container_cpu_values(1000)
@@ -536,7 +594,7 @@ if __name__ == "__main__":
         for i, agent in enumerate(agents):
             agent.save(f"{parent_dir}/{MODEL}/agent_{i}.pth")
 
-        save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_latencies, agents_summed_rewards)
+        save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_latencies, agents_summed_rewards, agents_mean_latenices=agents_mean_latenices)
 
         for agent_idx, rewards in enumerate(utilization_all_step_rewards):
             filename = f'{parent_dir}/{MODEL}/agent_{agent_idx}_step_util_rewards.csv'
