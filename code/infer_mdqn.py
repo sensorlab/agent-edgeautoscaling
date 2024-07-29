@@ -9,11 +9,16 @@ from train_mdqn import DQN, set_available_resource, DuelingDQN
 from envs import DiscreteElasticityEnv
 from pod_controller import set_container_cpu_values
 
+from train_ppo import set_other_priorities, set_other_utilization
+
 
 def infer_mdqn(n_agents=3, model='mdqn300ep500m', resources=1000, increment=25, debug=True):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     n_agents = 3
     envs = [DiscreteElasticityEnv(i) for i in range(1, n_agents + 1)]
+    
+    other_envs = [[env for env in envs if env != envs[i]] for i in range(len(envs))] # For every env its other envs (pre-computing)
+    
     state = envs[0].reset()
     n_actions = envs[0].action_space.n
     n_observations = len(state) * len(state[0])
@@ -22,16 +27,22 @@ def infer_mdqn(n_agents=3, model='mdqn300ep500m', resources=1000, increment=25, 
     agents = [DuelingDQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
 
     for i, agent in enumerate(agents):
-        agent.load_state_dict(torch.load(f'trained/{model}/model_weights_agent_{i}.pth'))
-        # agent.load_state_dict(torch.load(f'code/model_metric_data/{model}/model_weights_agent_{i}.pth'))
+        # agent.load_state_dict(torch.load(f'trained/{model}/model_weights_agent_{i}.pth'))
+        agent.load_state_dict(torch.load(f'code/model_metric_data/{model}/model_weights_agent_{i}.pth'))
         print(f'Loaded weights for agent {i}')
         agent.eval()
     
+    
+    priorities = [0.1,
+                  0.1,
+                  0.5]
+
     # get paremeters from model folder name
-    for env in envs:
+    for i, env in enumerate(envs):
         # env.DEBUG = debug
         env.MAX_CPU_LIMIT = resources
         env.INCREMENT = increment
+        env.priority = priorities[i]
 
     set_available_resource(envs, resources)
     print(f"Loaded model with parameters: initial resources: {resources}, increment action: {increment}, n_agents: {n_agents}")
@@ -51,7 +62,10 @@ def infer_mdqn(n_agents=3, model='mdqn300ep500m', resources=1000, increment=25, 
 
         next_states, rewards, dones = [], [], []
         for i, action in enumerate(actions):
-            observation, reward, done, _ = envs[i].step(action.item(), 1)
+            set_other_utilization(envs[i], other_envs[i])
+            set_other_priorities(envs[i], other_envs[i])
+
+            observation, reward, done, _ = envs[i].step(action.item(), 2)
             set_available_resource(envs, resources)
             next_states.append(np.array(observation).flatten())
             rewards.append(reward)
@@ -60,7 +74,7 @@ def infer_mdqn(n_agents=3, model='mdqn300ep500m', resources=1000, increment=25, 
             #     next_states[i] = None
 
             if debug:
-                print(f"Agent {envs[i].id}, ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward} state(limit, usage, others): {envs[i].state[-1]}")
+                print(f"{envs[i].id}: ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward} state(limit, usage, others): {envs[i].state[-1]}")
         if debug:
             print()
 
@@ -80,9 +94,9 @@ if __name__ == "__main__":
 
     set_container_cpu_values(50)
     # model = 'variational_loading/variational_resources/mdqn1000ep500m25inc1000mcmax40rps500interval0.75alpha_double_dueling_varres'
-    model = 'variational_loading/variational_resources/mdqn600ep500m25inc1000mcmax50rps500interval0.75alpha_double_dueling' # best model so far
+    # model = 'variational_loading/variational_resources/mdqn600ep500m25inc1000mcmax50rps500interval0.75alpha_double_dueling' # best model so far
     # model = 'new_reward/dqn/mdqn300ep500m25inc1000mcmax50rps1000interval0.5alpha0.5gl_double_dueling_varres' # good, better changeable resources
-    # model = 'dqn/mdqn50ep500m25inc1000mcmax50rps1000interval0.5alpha0.5gl_double_dueling_varres'
+    model = 'dqn/mdqn100ep500m25inc2_rf_30rps5.0alpha_double_dueling_varres'
 
     infer_mdqn(3, model, args.resources, args.increment, args.debug)
     # infer_mdqn(3, 'variational_loading/variational_resources/variational_intervals/mdqn600ep500m25inc1000mcmax50rps500interval0.75alpha_double_dueling_pretrained', args.resources, args.increment, args.debug)
