@@ -233,7 +233,8 @@ class InstantContinuousElasticityEnv(BaseElasticityEnv):
         action = np.clip(action, self.action_space.low, self.action_space.high)
         scale_action = action[0] * self.MAX_CPU_LIMIT
 
-        if scale_action < self.ALLOCATED or scale_action <= max(self.AVAILABLE, 0):
+        # if scale_action < self.ALLOCATED or (self.ALLOCATED - scale_action) <= max(self.AVAILABLE, 0):
+        if (scale_action - self.ALLOCATED) <= max(self.AVAILABLE, 0):
             new_resource_limit = int(max(scale_action, self.MIN_CPU_LIMIT))
             self.ALLOCATED = new_resource_limit
             patch_pod(

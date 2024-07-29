@@ -378,7 +378,6 @@ if __name__ == '__main__':
                 print()
         
             [agents_ep_reward[i].append(rewards[i]) for i in range(n_agents)]
-            [agents_mean_latenices[i].append(np.mean(latency)) for i, latency in enumerate(agents_ep_mean_latency)]
 
             ep_rewards += np.mean(rewards)
 
@@ -406,6 +405,7 @@ if __name__ == '__main__':
         summed_rewards.append(ep_rewards)
         
         [agents_summed_rewards[i].append(np.sum(reward)) for i, reward in enumerate(agents_ep_reward)]
+        [agents_mean_latenices[i].append(np.mean(latency)) for i, latency in enumerate(agents_ep_mean_latency)]
         print(f"Episode {i_episode} reward: {ep_rewards} mean latency: {np.mean(ep_latencies)}")
 
         spam_process.terminate()

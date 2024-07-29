@@ -386,6 +386,7 @@ if __name__ == "__main__":
             for i, latency in enumerate(latencies):
                 agents_ep_mean_latency[i].append(latency)
             latency = np.mean(latencies) # Avg latency of all pods
+            ep_latencies.append(latency)
 
             priority_weighted_latency = sum((1 + env.priority) * latency for env, latency in zip(envs, latencies))
             shared_reward = 1 - ALPHA_CONSTANT * (priority_weighted_latency - 0.01)

@@ -463,10 +463,12 @@ if __name__ == "__main__":
             print(f"Resources changed to {RESOURCES} for episode {episode}")
 
         if episode % 4 == 0 and train_priority:
-            for env in envs:
-                env.priority = random.randint(1, 10) / 10.0
+            priorities = [random.randint(1, 10) / 10.0 for _ in range(n_agents)]
+            for i, env in enumerate(envs):
+                env.priority = priorities[i]
                 # if reset_env:
                 #     env.patch(100)
+            print(f"Priorities for envs changed to {priorities} for episode {episode}")
 
         # random_rps = np.random.randint(min_rps, reqs_per_second) if randomize_reqs else reqs_per_second
         # In this training the random rps is handled by the loading script
