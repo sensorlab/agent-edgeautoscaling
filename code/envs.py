@@ -7,7 +7,7 @@ from pod_controller import patch_pod
 
 
 class BaseElasticityEnv(Env):
-    def __init__(self, id):
+    def __init__(self, id, independent_state=False):
         super().__init__()
         # Targets pod localization-api1 with container localization-api
         self.container_name = 'localization-api'
@@ -23,6 +23,8 @@ class BaseElasticityEnv(Env):
         self.ALLOCATED = 50
         self.AVAILABLE = 1000
 
+        self.independent_state = independent_state
+
         self.debug_deployment = True
         nodes = init_nodes(debug=self.debug_deployment, custom_label=self.app_label)
 
@@ -37,8 +39,10 @@ class BaseElasticityEnv(Env):
 
         self.other_util = 0.0
         self.STATE_LENTGH = 6
-        self.states_fifo = [[0, 0, 0, 0, 0, 0, 0] for _ in range(self.STATE_LENTGH)]
-        # self.states_fifo = [[0, 0, 0, 0] for _ in range(self.STATE_LENTGH)]
+        if self.independent_state:
+            self.states_fifo = [[0, 0, 0, 0, 0] for _ in range(self.STATE_LENTGH)]
+        else:
+            self.states_fifo = [[0, 0, 0, 0, 0, 0, 0] for _ in range(self.STATE_LENTGH)]
 
         self.last_cpu_percentage = 0
         self.previous_cpu_percentage = 0
@@ -68,7 +72,10 @@ class BaseElasticityEnv(Env):
 
         available_normed = self.norm_cpu(self.AVAILABLE)
         # state = [n_cpu_limit, n_cpu, available_normed]
-        state = [n_cpu_limit, n_cpu, available_normed, cpu_percentage / 100, self.other_util / 100, self.priority, self.other_priorities]
+        if self.independent_state:
+            state = [n_cpu_limit, n_cpu, available_normed, cpu_percentage / 100, self.priority]
+        else:
+            state = [n_cpu_limit, n_cpu, available_normed, cpu_percentage / 100, self.other_util / 100, self.priority, self.other_priorities]
         # state = [n_cpu_limit, n_cpu, available_normed, self.last_cpu_percentage / 100]
 
         self.states_fifo.append(state)
@@ -154,8 +161,8 @@ class BaseElasticityEnv(Env):
 
 
 class DiscreteElasticityEnv(BaseElasticityEnv):
-    def __init__(self, id):
-        super().__init__(id)
+    def __init__(self, id, independent_state=False):
+        super().__init__(id, independent_state=independent_state)
         self.action_space = spaces.Discrete(3)
 
     def step(self, action, rf):
@@ -187,8 +194,8 @@ class DiscreteElasticityEnv(BaseElasticityEnv):
 
 
 class ContinuousElasticityEnv(BaseElasticityEnv):
-    def __init__(self, id):
-        super().__init__(id)
+    def __init__(self, id, independent_state=False):
+        super().__init__(id, independent_state=independent_state)
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
         # self.action_space = spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
         self.scale_action = 50
@@ -223,8 +230,8 @@ class ContinuousElasticityEnv(BaseElasticityEnv):
 
 
 class InstantContinuousElasticityEnv(BaseElasticityEnv):
-    def __init__(self, id):
-        super().__init__(id)
+    def __init__(self, id, independent_state=False):
+        super().__init__(id, independent_state=independent_state)
         self.action_space = spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
         self.scale_action = 50 # Placeholder
 

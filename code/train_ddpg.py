@@ -254,6 +254,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--priority', type=int, default=0, help="Options: 0, 1, 2")
 
+    parser.add_argument('--independent_state', action='store_true', default=False, help="Dont use metrics from other pods (except for available resources)")
     parser.add_argument('--make_checkpoints', action='store_true', default=False, help="Save weights every 5 episodes")
     parser.add_argument('--random_rps', action='store_true', default=False, help="Train on random requests every episode")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
@@ -280,24 +281,26 @@ if __name__ == "__main__":
     make_checkpoints = args.make_checkpoints
     old_reward = args.old_reward
     instant = args.instant
+    independent_state = args.independent_state
     priority = args.priority
 
     url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}"
     # url = f"http://localhost:30888/predict"
-    USERS = 10
+    USERS = 1
 
     if instant:
-        envs = [InstantContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
+        envs = [InstantContinuousElasticityEnv(i, independent_state=independent_state) for i in range(1, n_agents + 1)]
     else:
-        envs = [ContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
+        envs = [ContinuousElasticityEnv(i, independent_state=independent_state) for i in range(1, n_agents + 1)]
 
     other_envs = [[env for env in envs if env != envs[i]] for i in range(len(envs))] # For every env its other envs (pre-computing), used for priority and utilization
     for i, env in enumerate(envs):
         env.MAX_CPU_LIMIT = RESOURCES
         env.DEBUG = False
         env.scale_action = scale_action
-        set_other_utilization(env, other_envs[i])
-        set_other_priorities(env, other_envs[i])
+        if not independent_state:
+            set_other_utilization(env, other_envs[i])
+            set_other_priorities(env, other_envs[i])
 
     train_priority = False
     match priority:
@@ -313,11 +316,12 @@ if __name__ == "__main__":
             train_priority = True
             print("Using default priority setting...")
 
-    agents = [DDPGagent(env, hidden_size=64, max_memory_size=1000, sigmoid_output=instant) for env in envs]
+    agents = [DDPGagent(env, hidden_size=64, max_memory_size=500, sigmoid_output=instant) for env in envs]
     # decay_period = envs[0].MAX_STEPS * episodes / 1.1 # Makes sense for now
     decay_period = envs[0].MAX_STEPS * episodes / 2
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]
-    noises = [OUNoise(env.action_space, max_sigma=0.25, min_sigma=0.025, decay_period=decay_period) for env in envs]
+    # noises = [OUNoise(env.action_space, max_sigma=0.25, min_sigma=0.025, decay_period=decay_period) for env in envs]
+    noises = [OUNoise(env.action_space, max_sigma=0.25, min_sigma=0.01, decay_period=decay_period) for env in envs]
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0, decay_period=decay_period) for env in envs]
     # noises = [OUNoise(env.action_space, max_sigma=0.07, min_sigma=0, decay_period=decay_period) for env in envs]
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=1250) for env in envs]
@@ -328,6 +332,8 @@ if __name__ == "__main__":
         MODEL += '_instant'
     if not variable_resources:
         MODEL += f"{RESOURCES}resources"
+    if independent_state:
+        MODEL += "_independent_state"
     if weights_dir:
         [agent.load_model(f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_actor.pth", f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
         print(f"Successfully loaded weights from {parent_dir}/{weights_dir}")
@@ -382,7 +388,8 @@ if __name__ == "__main__":
             time.sleep(1)
             agents_step_rewards = []
 
-            latencies = [np.mean([latency for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict') if latency is not None]) for env in envs]
+            latencies = [np.mean([latency if latency is not None else 2 for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
+            # latencies = [np.mean([latency for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict') if latency is not None]) for env in envs]
             for i, latency in enumerate(latencies):
                 agents_ep_mean_latency[i].append(latency)
             latency = np.mean(latencies) # Avg latency of all pods
@@ -399,8 +406,9 @@ if __name__ == "__main__":
                 actions.append(action)
 
             for i, env in enumerate(envs):
-                set_other_utilization(envs[i], other_envs[i])
-                set_other_priorities(envs[i], other_envs[i])
+                if not independent_state:
+                    set_other_utilization(envs[i], other_envs[i])
+                    set_other_priorities(envs[i], other_envs[i])
 
                 new_state, agent_reward, done, _ = env.step(actions[i], 2)
                 new_state = np.array(new_state).flatten()
@@ -416,7 +424,7 @@ if __name__ == "__main__":
                 if len(agents[i].memory) > bs:
                     agents[i].update(bs)
                 agents_step_rewards.append(reward)
-                if debug or step % envs[i].MAX_STEPS / 2 == 0:
+                if debug or step % (envs[i].MAX_STEPS // 2) == 0:
                     print(f"{envs[i].id}: ACTION: {actions[i]}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
             if debug:
                 print()

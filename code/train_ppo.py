@@ -250,6 +250,7 @@ class PPO:
 
         # Calculate advantages
         advantages = rewards.detach() - old_state_values.detach()
+        # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-7)
         
         # Optimize policy for K epochs
         for _ in range(self.K_epochs):
@@ -307,6 +308,8 @@ if __name__ == "__main__":
     parser.add_argument('--episodes', type=int, default=300)
     parser.add_argument('--init_resources', type=int, default=1000, help="Cpu resoruces given to the cluster")
     parser.add_argument('--alpha', type=float, default=5, help="Weight for the shared reward")
+    parser.add_argument('--initial_action_std', type=float, default=0.5, help="Initial action standard deviation for PPO exploaration")
+    parser.add_argument('--update_every', type=int, default=3, help="On how many episodes update the models")
     parser.add_argument('--n_agents', type=int, default=3)
     parser.add_argument('--rps', type=int, default=50, help="Baseline bound of requests per second for loading cluster, if random, it is the upper bound")
     parser.add_argument('--min_rps', type=int, default=10, help="Minimum Requests per second for loading cluster, if the random requests are enabled")
@@ -314,12 +317,11 @@ if __name__ == "__main__":
     parser.add_argument('--gamma_latency', type=float, default=0.5, help="Latency normalization")
     parser.add_argument('--scale_action', type=int, default=50, help="How much does the agent scale with an action")
     parser.add_argument('--load_weights', type=str, default=False, help="Load weights from previous training with a string of the model parent directory")
-    parser.add_argument('--batch_size', type=int, default=64, help="Batch size for training")
     parser.add_argument('--k_epochs', type=int, default=10, help="K-epochs for ppo training")
     parser.add_argument('--reward_function', type=int, default=1, help="Options: 1, 2, 3, 4, 5...")
+    parser.add_argument('--priority', type=int, default=0, help="Options: 0, 1, 2... 0 means to train priority")
 
-    parser.add_argument('--priority', type=int, default=0, help="Options: 0, 1, 2")
-
+    parser.add_argument('--independent_state', action='store_true', default=False, help="Dont use metrics from other pods (except for available resources)")
     parser.add_argument('--make_checkpoints', action='store_true', default=False, help="Save weights every 5 episodes")
     parser.add_argument('--random_rps', action='store_true', default=False, help="Train on random requests every episode")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
@@ -345,16 +347,18 @@ if __name__ == "__main__":
     scale_action = args.scale_action
     min_rps = args.min_rps
     make_checkpoints = args.make_checkpoints
-    batch_size = args.batch_size
     discrete = args.discrete
     reward_function = args.reward_function
     k_epochs = args.k_epochs
     instant = args.instant
     reset_env = args.reset_env
     priority = args.priority
+    independent_state = args.independent_state
+    initial_action_std = args.initial_action_std
+    update_every = args.update_every
 
     url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}"
-    USERS = 10
+    USERS = 1 # Maybe change it later on to get "truer" latenies, but 1 is set for faster training
 
     if discrete:
         envs = [DiscreteElasticityEnv(i) for i in range(1, n_agents + 1)]
@@ -363,7 +367,7 @@ if __name__ == "__main__":
             env.INCREMENT = increment_action
     else:
         if instant:
-            envs = [InstantContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
+            envs = [InstantContinuousElasticityEnv(i, independent_state) for i in range(1, n_agents + 1)]
         else:
             envs = [ContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
 
@@ -372,33 +376,36 @@ if __name__ == "__main__":
 
     other_envs = [[env for env in envs if env != envs[i]] for i in range(len(envs))] # For every env its other envs (pre-computing), used for priority and utilization
 
-    for i, env in enumerate(envs):
-        env.MAX_CPU_LIMIT = RESOURCES
-        env.DEBUG = False
-        set_other_utilization(env, other_envs[i])
-        set_other_priorities(env, other_envs[i])
-
     train_priority = False
+    priorities = [1.0, 1.0, 1.0]
     match priority:
         case 1:
-            envs[0].priority = 0.1
-            envs[1].priority = 1.0
-            envs[2].priority = 0.1
+            priorities = [1.0, 0.1, 0.1]
         case 2:
-            envs[0].priority = 1.0
-            envs[1].priority = 0.1
-            envs[2].priority = 0.1
+            priorities = [0.1, 1.0, 0.1]
+        case 3:
+            priorities = [0.1, 0.1, 1.0]
         case 0:
             train_priority = True
         case _:
-            print("Using default priority setting...")
+            print("Using default priority setting... [1, 1, ..., 1]")
+
+    for i, env in enumerate(envs):
+        env.MAX_CPU_LIMIT = RESOURCES
+        env.DEBUG = False
+        env.priority = priorities[i]
+        if not independent_state:
+            set_other_utilization(env, other_envs[i])
+            set_other_priorities(env, other_envs[i])
 
     total_steps = envs[0].MAX_STEPS * episodes
-    update_timestep = envs[0].MAX_STEPS * 3
-    initial_action_std = 0.5
+    update_timestep = envs[0].MAX_STEPS * update_every
+    # initial_action_std = initial_action_std
     action_std_decay_rate = 0.05
     min_action_std = 0.1
-    action_std_decay_freq = total_steps // 15 # Frequency of decay
+    action_std_decay_freq = total_steps // 16 # Frequency of decay
+
+    print(f"Settings for PPO: {episodes} episodes, {n_agents} agents, {initial_action_std} initial action std, {action_std_decay_rate} action std decay rate, {min_action_std} min action std, {update_every} update every, {k_epochs} k epochs")
 
     time_step = 0
 
@@ -410,11 +417,17 @@ if __name__ == "__main__":
 
     parent_dir = 'code/model_metric_data/ppo'
     # MODEL = f'{episodes}ep{RESOURCES}resources_rf_{reward_function}_{reqs_per_second}rps{interval}interval{k_epochs}kepochs{ALPHA_CONSTANT}alpha{scale_action}scale_a{priority}priority'
-    MODEL = f'{episodes}ep_rf_{reward_function}_{reqs_per_second}rps{k_epochs}kepochs{int(ALPHA_CONSTANT)}alpha{scale_action}scale_a{priority}priority_newloading'
+    MODEL = f'{episodes}ep_rf_{reward_function}_{reqs_per_second}rps{k_epochs}kepochs{int(ALPHA_CONSTANT)}alpha'
+    if priority != 0:
+        MODEL += f'_{priority}priority'
+    if independent_state:
+        MODEL += "_independent_state"
     if discrete:
         MODEL += '_discrete'
     if instant:
         MODEL += '_instantscale'
+    else:
+        MODEL += f"{scale_action}scale_a"
     if not reset_env:
         MODEL += '_NOreseting'
     if reward_function == 42:
@@ -437,9 +450,6 @@ if __name__ == "__main__":
     mean_latencies = []
     agents_summed_rewards = [[] for _ in range(n_agents)]
     agents_mean_latenices = [[] for _ in range(n_agents)]
-
-    init_patience = 20 # every second episode if the agent is stuck
-    patiences = [init_patience for _ in range(n_agents)]
 
     set_container_cpu_values(100)
     set_available_resource(envs, RESOURCES)
@@ -495,7 +505,9 @@ if __name__ == "__main__":
             # latency = np.mean([latency for latency in latencies if latency is not None])
 
             # Separate avg latecy for every pod/env/agent/container in the cluster
-            latencies = [np.mean([latency for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict') if latency is not None]) for env in envs]
+            # latencies = [np.mean([latency for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict') if latency is not None]) for env in envs]
+            # Give it 2, to avoid mean of None type
+            latencies = [np.mean([latency if latency is not None else 2 for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
 
             for i, latency in enumerate(latencies):
                 agents_ep_mean_latency[i].append(latency)
@@ -531,8 +543,9 @@ if __name__ == "__main__":
 
             actions, new_states, dones = [], [], []
             for i, agent in enumerate(agents):
-                set_other_utilization(envs[i], other_envs[i])
-                set_other_priorities(envs[i], other_envs[i])
+                if not independent_state:
+                    set_other_utilization(envs[i], other_envs[i])
+                    set_other_priorities(envs[i], other_envs[i])
 
                 action = agent.select_action(states[i])
 
@@ -557,11 +570,15 @@ if __name__ == "__main__":
 
                 if time_step % update_timestep == 0:
                     agent.update()
+                    if debug:
+                        print(f"Agent {i} updated at time step {time_step}")
                 
                 if time_step % action_std_decay_freq == 0:
                     agent.decay_action_std(action_std_decay_rate, min_action_std)
-                
-                if debug or time_step % envs[i].MAX_STEPS / 2 == 0:
+                    if debug:
+                        print(f"Agent {i} action std decayed at time step {time_step}")
+
+                if debug or time_step % (envs[i].MAX_STEPS // 2) == 0:
                     print(f"{envs[i].id}: ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
             if debug or time_step % envs[i].MAX_STEPS / 2 == 0:
                 print()

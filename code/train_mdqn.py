@@ -21,6 +21,7 @@ import pandas as pd
 from spam_cluster import get_response_latenices
 from pod_controller import set_container_cpu_values, get_loadbalancer_external_port
 from utils import save_training_data
+from train_ppo import set_other_priorities, set_other_utilization
 
 
 class ReplayMemory(object):
@@ -184,7 +185,7 @@ if __name__ == '__main__':
     EPS_START = 0.9
     # EPS_END = 0.25
     EPS_END = 0.15
-    EPS_DECAY = 500
+    EPS_DECAY = 2000
     TAU = 0.005
     LR = 1e-4
 
@@ -206,6 +207,8 @@ if __name__ == '__main__':
     parser.add_argument('--load_weights', type=bool, default=False, help="Load weights from previous training")
     parser.add_argument('--variable_resources', type=bool, default=False, help="Random resources every 10 episodes")
     parser.add_argument('--gamma_latency', type=float, default=0.5, help="Latency normalization")
+
+    parser.add_argument('--independent_state', action='store_true', default=False, help="Dont use metrics from other pods (except for available resources)")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
     args = parser.parse_args()
 
@@ -222,6 +225,7 @@ if __name__ == '__main__':
     rf = args.reward_function
     priority = args.priority
     alpha = args.alpha
+    independent_state = args.independent_state
 
     # MEMORY_SIZE = 1000
     MEMORY_SIZE = 500
@@ -233,7 +237,7 @@ if __name__ == '__main__':
     # env values
     RESOURCES = args.init_resources
     INCREMENT_ACTION = args.increment_action
-    USERS = 10
+    USERS = 1
     # reqs_per_second -= USERS # interval is set to 1s
 
 
@@ -245,20 +249,22 @@ if __name__ == '__main__':
         MODEL += f'{RESOURCES}res'
     suffixes = ['_double' if double else '', '_dueling' if dueling else '', '_varres' if variable_resources else '']
     MODEL += ''.join(suffixes)
+    if independent_state:
+        MODEL += "_independent_state"
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
 
     print(f"Initialized model {MODEL}, random_rps {randomize_reqs}, variable_resoruces {variable_resources}, interval {interval} ms, rps {reqs_per_second}")
 
     n_agents = args.n_agents
-    envs = [DiscreteElasticityEnv(i) for i in range(1, n_agents + 1)]
+    envs = [DiscreteElasticityEnv(i, independent_state=independent_state) for i in range(1, n_agents + 1)]
     other_envs = [[env for env in envs if env != envs[i]] for i in range(len(envs))] # For every env its other envs (pre-computing), used for priority and utilization
 
     for i, env in enumerate(envs):
         env.MAX_CPU_LIMIT = RESOURCES
         env.INCREMENT = INCREMENT_ACTION
-        from train_ppo import set_other_priorities, set_other_utilization
-        set_other_utilization(env, other_envs[i])
-        set_other_priorities(env, other_envs[i])
+        if not independent_state:
+            set_other_utilization(env, other_envs[i])
+            set_other_priorities(env, other_envs[i])
 
     train_priority = False
     match priority:
@@ -342,7 +348,7 @@ if __name__ == '__main__':
         for t in count():
             time.sleep(1)
             
-            latencies = [np.mean([latency for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict') if latency is not None]) for env in envs]
+            latencies = [np.mean([latency if latency is not None else 2 for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
             for i, latency in enumerate(latencies):
                 agents_ep_mean_latency[i].append(latency)
 
@@ -357,8 +363,9 @@ if __name__ == '__main__':
             next_states, rewards, dones = [], [], []
             resources = []
             for i, action in enumerate(actions):
-                set_other_utilization(envs[i], other_envs[i])
-                set_other_priorities(envs[i], other_envs[i])
+                if not independent_state:
+                    set_other_utilization(envs[i], other_envs[i])
+                    set_other_priorities(envs[i], other_envs[i])
 
                 observation, agent_reward, done, _ = envs[i].step(action.item(), rf)
                 set_available_resource(envs, RESOURCES) # heavy
@@ -372,7 +379,7 @@ if __name__ == '__main__':
                 if done:
                     next_states[i] = None
 
-                if debug or t % envs[i].MAX_STEPS / 2 == 0:
+                if debug or t % (envs[i].MAX_STEPS // 2) == 0:
                     print(f"{envs[i].id}: ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
             if debug or t % envs[i].MAX_STEPS / 2 == 0:
                 print()
