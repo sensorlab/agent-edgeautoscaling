@@ -185,7 +185,7 @@ if __name__ == '__main__':
     EPS_START = 0.9
     # EPS_END = 0.25
     EPS_END = 0.15
-    EPS_DECAY = 2000
+    EPS_DECAY = 1500
     TAU = 0.005
     LR = 1e-4
 
@@ -210,6 +210,7 @@ if __name__ == '__main__':
 
     parser.add_argument('--independent_state', action='store_true', default=False, help="Dont use metrics from other pods (except for available resources)")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
+    parser.add_argument('--reset_env', action='store_true', default=False, help="Resetting the env every 10th episode")
     args = parser.parse_args()
 
     double = args.double
@@ -226,9 +227,9 @@ if __name__ == '__main__':
     priority = args.priority
     alpha = args.alpha
     independent_state = args.independent_state
+    reset_env = args.reset_env
 
-    # MEMORY_SIZE = 1000
-    MEMORY_SIZE = 500
+    MEMORY_SIZE = 1000
     EPISODES = args.episodes
 
     LOAD_WEIGHTS = args.load_weights
@@ -325,6 +326,11 @@ if __name__ == '__main__':
                 env.MAX_CPU_LIMIT = RESOURCES
                 env.patch(100)
             print(f"Resources changed to {RESOURCES} for episode {i_episode}")
+
+        if i_episode % 10 == 0 and reset_env:
+            for env in envs:
+                env.patch(100)
+                env.reset()
 
         if i_episode % 4 == 0 and train_priority:
             for env in envs:

@@ -329,7 +329,7 @@ if __name__ == "__main__":
     parser.add_argument('--discrete', action='store_true', default=False, help="Use discrete actions")
     parser.add_argument('--instant', action='store_true', default=False, help="Scale directly to value")
 
-    parser.add_argument('--reset_env', action='store_true', default=False, help="Resetting the env every 4th episode")
+    parser.add_argument('--reset_env', action='store_true', default=False, help="Resetting the env every 10th episode")
     args = parser.parse_args()
 
     SAVE_WEIGHTS = True # Always save weightsB)
@@ -361,7 +361,7 @@ if __name__ == "__main__":
     USERS = 1 # Maybe change it later on to get "truer" latenies, but 1 is set for faster training
 
     if discrete:
-        envs = [DiscreteElasticityEnv(i) for i in range(1, n_agents + 1)]
+        envs = [DiscreteElasticityEnv(i, independent_state) for i in range(1, n_agents + 1)]
         increment_action = 25
         for env in envs:
             env.INCREMENT = increment_action
@@ -369,7 +369,7 @@ if __name__ == "__main__":
         if instant:
             envs = [InstantContinuousElasticityEnv(i, independent_state) for i in range(1, n_agents + 1)]
         else:
-            envs = [ContinuousElasticityEnv(i) for i in range(1, n_agents + 1)]
+            envs = [ContinuousElasticityEnv(i, independent_state) for i in range(1, n_agents + 1)]
 
         for i, env in enumerate(envs):
             env.scale_action = scale_action
@@ -403,7 +403,7 @@ if __name__ == "__main__":
     # initial_action_std = initial_action_std
     action_std_decay_rate = 0.05
     min_action_std = 0.1
-    action_std_decay_freq = total_steps // 16 # Frequency of decay
+    action_std_decay_freq = total_steps // 25 # Frequency of decay
 
     print(f"Settings for PPO: {episodes} episodes, {n_agents} agents, {initial_action_std} initial action std, {action_std_decay_rate} action std decay rate, {min_action_std} min action std, {update_every} update every, {k_epochs} k epochs")
 
@@ -417,7 +417,7 @@ if __name__ == "__main__":
 
     parent_dir = 'code/model_metric_data/ppo'
     # MODEL = f'{episodes}ep{RESOURCES}resources_rf_{reward_function}_{reqs_per_second}rps{interval}interval{k_epochs}kepochs{ALPHA_CONSTANT}alpha{scale_action}scale_a{priority}priority'
-    MODEL = f'{episodes}ep_rf_{reward_function}_{reqs_per_second}rps{k_epochs}kepochs{int(ALPHA_CONSTANT)}alpha'
+    MODEL = f'{episodes}ep_rf_{reward_function}_{reqs_per_second}rps{k_epochs}kepochs{int(ALPHA_CONSTANT)}alpha{update_every}epupdate'
     if priority != 0:
         MODEL += f'_{priority}priority'
     if independent_state:
@@ -471,6 +471,11 @@ if __name__ == "__main__":
                 env.MAX_CPU_LIMIT = RESOURCES
                 env.patch(100) # It can happen that they have allocated more than available and be stuck, so patch them in case
             print(f"Resources changed to {RESOURCES} for episode {episode}")
+
+        if episode % 10 == 0 and reset_env:
+            for env in envs:
+                env.patch(100)
+                env.reset()
 
         if episode % 4 == 0 and train_priority:
             priorities = [random.randint(1, 10) / 10.0 for _ in range(n_agents)]

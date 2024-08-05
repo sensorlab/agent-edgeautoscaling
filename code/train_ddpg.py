@@ -216,8 +216,8 @@ class DDPGagent():
             target_param.data.copy_(param.data * self.tau + target_param.data * (1.0 - self.tau))
     
     def load_model(self, actor_path, critic_path):
-        self.actor.load_state_dict(torch.load(actor_path))
-        self.critic.load_state_dict(torch.load(critic_path))
+        self.actor.load_state_dict(torch.load(actor_path, map_location=lambda storage, loc: storage))
+        self.critic.load_state_dict(torch.load(critic_path, map_location=lambda storage, loc: storage))
     
     def save_model(self, path):
         torch.save(self.actor.state_dict(), path + "_actor.pth")
@@ -261,6 +261,7 @@ if __name__ == "__main__":
     parser.add_argument('--variable_resources', action='store_true', default=False, help="Random resources every 10 episodes")
     parser.add_argument('--old_reward', action='store_true', default=False, help="Use the old reward function")
     parser.add_argument('--instant', action='store_true', default=False, help="Use instant scaling elasticity environemnt")
+    parser.add_argument('--reset_env', action='store_true', default=False, help="Resetting the env every 10th episode")
     args = parser.parse_args()
 
     SAVE_WEIGHTS = True # Always save weightsB)
@@ -283,6 +284,7 @@ if __name__ == "__main__":
     instant = args.instant
     independent_state = args.independent_state
     priority = args.priority
+    reset_env = args.reset_env
 
     url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}"
     # url = f"http://localhost:30888/predict"
@@ -316,9 +318,9 @@ if __name__ == "__main__":
             train_priority = True
             print("Using default priority setting...")
 
-    agents = [DDPGagent(env, hidden_size=64, max_memory_size=500, sigmoid_output=instant) for env in envs]
+    agents = [DDPGagent(env, hidden_size=64, max_memory_size=1000, sigmoid_output=instant) for env in envs]
     # decay_period = envs[0].MAX_STEPS * episodes / 1.1 # Makes sense for now
-    decay_period = envs[0].MAX_STEPS * episodes / 2
+    decay_period = envs[0].MAX_STEPS * episodes / 2.5
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]
     # noises = [OUNoise(env.action_space, max_sigma=0.25, min_sigma=0.025, decay_period=decay_period) for env in envs]
     noises = [OUNoise(env.action_space, max_sigma=0.25, min_sigma=0.01, decay_period=decay_period) for env in envs]
@@ -364,6 +366,11 @@ if __name__ == "__main__":
                 env.MAX_CPU_LIMIT = RESOURCES
                 env.patch(100)
             print(f"Resources changed to {RESOURCES} for episode {episode}")
+        
+        if episode % 10 == 0 and reset_env:
+            for env in envs:
+                env.patch(100)
+                env.reset()
 
         if episode % 4 == 0 and train_priority:
             for env in envs:
