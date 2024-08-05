@@ -198,13 +198,13 @@ def patch_pod(pod_name, cpu_request="1", cpu_limit="1", memory_request=None, mem
 
 def set_container_cpu_values(cpus=50, container='localization-api', n=3):
     for i in range(1, n + 1):
-        patch_pod(f'localization-api{i}', cpu_request=f"{cpus}m", cpu_limit=f"{cpus}m", container_name='localization-api', debug=True)
+        patch_pod(f'localization-api{i}', cpu_request=f"{cpus}m", cpu_limit=f"{cpus}m", container_name='localization-api', debug=True, print_output=True)
 
 
 if __name__ == '__main__':
     # patch_pod('ray-worker-pod', cpu_request="500m", cpu_limit="500m", memory_limit="2Gi", memory_request="1Gi")
     # patch_pod('ray-head-pod', cpu_request="1", cpu_limit="1500m")
-    set_container_cpu_values(cpus=100)
+    set_container_cpu_values(cpus=500)
     # patch_pod('ray-worker-pod1', cpu_request="2", cpu_limit="2")
     # patch_pod('ray-worker-pod', cpu_request="1", cpu_limit="1500m")
     # create_pod_from('ray-worker-pod', node_name='jovyan-thinkpad-l14-gen-1')
@@ -212,6 +212,9 @@ if __name__ == '__main__':
     # create_pod_from('localization-api1', node_name='raspberrypi2', debug=True)
     # create_pod_from('localization-api2', node_name='raspberrypi1', debug=True)
     # create_pod_from('localization-api3', node_name='raspberrypi2', debug=True)
+    
+    # Testing RAM memory, works...
+    # patch_pod('localization-api2', container_name='localization-api', memory_request='2Gi', memory_limit='2Gi', debug=True)
     # create_worker_pod()
     # create_worker_pod()
     # create_worker_pod()

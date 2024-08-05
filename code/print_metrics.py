@@ -5,6 +5,7 @@ from utils import init_nodes, load_config
 if __name__ == '__main__':
     config = load_config()
     nodes = init_nodes(debug=config.get('DEBUG'), custom_label=config.get('custom_app_label'))
+    # nodes = init_nodes(debug=True, custom_label='app=localization-api')
 
     while True:
         for node in nodes:
@@ -20,12 +21,17 @@ if __name__ == '__main__':
 
             print("Containers-------")
             for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
-                (cpu_limit, cpu, cpu_percentage), (memory_limit, memory, memory_percentage), (rx, tx) = node.get_container_usage(container_id)
+                (cpu_limit, cpu, cpu_percentage), (memory_limit, memory, memory_percentage), (rx, tx), throttled = node.get_container_usage(container_id)
                 print(f"Usage for container {pod_name} at pod {container_name}:{pod_ip}")
                 print(f"CPU Usage : {cpu:.2f} mC, {cpu_percentage:.2f}%, limit {cpu_limit} mC")
                 print(f"Memory Usage: {memory:.2f} MB, {memory_percentage:.2f}%, limit {memory_limit} MB")
                 print(f"RX: {rx} MB, TX: {tx} MB")
                 print('')
+
+                cpu_limit = cpu_limit
+                cpu = cpu
+                print(f"\nState for container {pod_name}, percentage: {cpu_percentage}, throttled {throttled}: [{cpu_limit}, {cpu}, available_placeholder]\n")
+
 
         time.sleep(1)
         print("\033c")

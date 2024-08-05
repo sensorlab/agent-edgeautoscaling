@@ -35,12 +35,12 @@ if __name__ == '__main__':
 
         for node in nodes:
             for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
-                (cpu_limit, cpu, cpu_p), (_, _, _), (_, _) = node.get_container_usage(container_id)
+                (cpu_limit, cpu, cpu_p), (_, _, _), (_, _), _ = node.get_container_usage(container_id)
                 AVAILABLE -= cpu_limit
 
         for node in nodes:
             for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
-                (cpu_limit, cpu, cpu_p), (_, _, _), (_, _) = node.get_container_usage(container_id)
+                (cpu_limit, cpu, cpu_p), (_, _, _), (_, _), _ = node.get_container_usage(container_id)
                 AVAILABLE -= cpu_limit
 
                 if cpu_p > UPPER and AVAILABLE >= scale_cpu:
