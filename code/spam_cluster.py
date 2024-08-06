@@ -16,14 +16,14 @@ from pod_controller import get_loadbalancer_external_port
 def process_single_request(url, data):
     try:
         data["feature"] = random.randint(0, 130)
-        latency = make_request(url, data)
-        if latency is not None:
-            return latency
+        rt = make_request(url, data)
+        if rt is not None:
+            return rt
     except Exception as e:
         pass
 
 
-def get_response_latenices(num_users, url):
+def get_response_times(num_users, url):
     data = {
         "feature": 0
     }
@@ -91,13 +91,13 @@ if __name__ == "__main__":
 
     if not all_services:
         # url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}/api{service}/predict"
-        url = f"http://localhost:32122/api{service}/predict" # Out ingress port of the service
+        url = f"http://localhost:31923/api{service}/predict" # Out ingress port of the service
         spam_requests(url, num_users, interval, variable=variable)
     else:
         urls = [
-            f"http://localhost:32122/api1/predict",
-            f"http://localhost:32122/api2/predict",
-            f"http://localhost:32122/api3/predict"
+            f"http://localhost:31923/api1/predict",
+            f"http://localhost:31923/api2/predict",
+            f"http://localhost:31923/api3/predict",
         ]
         for url in urls:
             users = random.randint(1, num_users) if random_rps else num_users
