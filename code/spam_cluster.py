@@ -99,24 +99,22 @@ if __name__ == "__main__":
             f"http://localhost:31923/api2/predict",
             f"http://localhost:31923/api3/predict",
         ]
-        for url in urls:
-            users = random.randint(1, num_users) if random_rps else num_users
-            print(f'Loading the cluster with {users} users on {url}')
-            command = [
-                "python3", __file__, "--users", str(users), "--interval", str(args.interval), "--service", url.split('/api')[1].split('/predict')[0]
-            ]
-            if variable:
-                command.append("--variable")
-            process = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                preexec_fn=os.setsid  # Start the process in a new session
-            )
-            processes.append(process)
-            
-        atexit.register(terminate_processes, processes)
-        signal.signal(signal.SIGTERM, lambda signum, frame: signal_handler(signum, frame, processes))
+        with ThreadPoolExecutor() as executor:
+            futures = []
+            for url in urls:
+                users = random.randint(1, num_users) if random_rps else num_users
+                print(f'Loading the cluster with {users} users on {url}')
+                command = [
+                    "python3", __file__, "--users", str(users), "--interval", str(args.interval), "--service", url.split('/api')[1].split('/predict')[0]
+                ]
+                if variable:
+                    command.append("--variable")
+                future = executor.submit(subprocess.Popen, command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=os.setsid)
+                futures.append(future)
 
-        for process in processes:
-            process.wait()
+            processes = [future.result() for future in futures]
+            atexit.register(terminate_processes, processes)
+            signal.signal(signal.SIGTERM, lambda signum, frame: signal_handler(signum, frame, processes))
+
+            for process in processes:
+                process.wait()
