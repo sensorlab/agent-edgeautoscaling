@@ -5,4 +5,4 @@ max_cpu: 1000
 min_cpu: 50
 UPPER: 60
 LOWER: 30
-action_interval: 1
+action_interval: 5
