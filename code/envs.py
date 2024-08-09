@@ -181,14 +181,14 @@ class DiscreteElasticityEnv(BaseElasticityEnv):
         return self.state, reward, done, 0
     
     def increase_resources(self):
-        cpu_limit, memory_limit = self.node.get_container_limits(self.container_id)
-        updated_cpu_limit = int(max(min(cpu_limit + self.INCREMENT, cpu_limit + self.AVAILABLE), self.MIN_CPU_LIMIT))
+        # cpu_limit, memory_limit = self.node.get_container_limits(self.container_id)
+        updated_cpu_limit = int(max(min(self.ALLOCATED + self.INCREMENT, self.ALLOCATED + self.AVAILABLE), self.MIN_CPU_LIMIT))
         self.ALLOCATED = updated_cpu_limit
         patch_pod(self.pod_name, cpu_request=f"{updated_cpu_limit}m", cpu_limit=f"{updated_cpu_limit}m", container_name=self.container_name, debug=self.debug_deployment)
 
     def decrease_resources(self):
-        cpu_limit, memory_limit = self.node.get_container_limits(self.container_id)
-        updated_cpu_limit = int(max(cpu_limit - self.INCREMENT, self.MIN_CPU_LIMIT))
+        # cpu_limit, memory_limit = self.node.get_container_limits(self.container_id)
+        updated_cpu_limit = int(max(self.ALLOCATED - self.INCREMENT, self.MIN_CPU_LIMIT))
         self.ALLOCATED = updated_cpu_limit
         patch_pod(self.pod_name, cpu_request=f"{updated_cpu_limit}m", cpu_limit=f"{updated_cpu_limit}m", container_name=self.container_name, debug=self.debug_deployment)
 
