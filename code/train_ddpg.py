@@ -1,6 +1,6 @@
 from envs import ContinuousElasticityEnv, InstantContinuousElasticityEnv
 from train_ppo import set_other_priorities, set_other_utilization
-from spam_cluster import get_response_latenices
+from spam_cluster import get_response_times
 from pod_controller import set_container_cpu_values, get_loadbalancer_external_port
 from utils import save_training_data
 
@@ -238,6 +238,7 @@ def set_available_resource(envs, initial_resources):
         env.AVAILABLE = max_group
 
 
+# TODO: Change variables named latency with response time
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--episodes', type=int, default=300)
@@ -318,7 +319,7 @@ if __name__ == "__main__":
             train_priority = True
             print("Using default priority setting...")
 
-    agents = [DDPGagent(env, hidden_size=64, max_memory_size=1000, sigmoid_output=instant) for env in envs]
+    agents = [DDPGagent(env, hidden_size=64, max_memory_size=5000, sigmoid_output=instant) for env in envs]
     # decay_period = envs[0].MAX_STEPS * episodes / 1.1 # Makes sense for now
     decay_period = envs[0].MAX_STEPS * episodes / 2.5
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]
@@ -332,6 +333,8 @@ if __name__ == "__main__":
     MODEL = f'{episodes}ep_2rf_{reqs_per_second}rps{ALPHA_CONSTANT}alpha'
     if instant:
         MODEL += '_instant'
+    else:
+        MODEL += f'_{scale_action}scale'
     if not variable_resources:
         MODEL += f"{RESOURCES}resources"
     if independent_state:
@@ -395,7 +398,7 @@ if __name__ == "__main__":
             time.sleep(1)
             agents_step_rewards = []
 
-            latencies = [np.mean([latency if latency is not None else 2 for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
+            latencies = [np.mean([latency if latency is not None else 2 for latency in get_response_times(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
             # latencies = [np.mean([latency for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict') if latency is not None]) for env in envs]
             for i, latency in enumerate(latencies):
                 agents_ep_mean_latency[i].append(latency)
@@ -431,10 +434,10 @@ if __name__ == "__main__":
                 if len(agents[i].memory) > bs:
                     agents[i].update(bs)
                 agents_step_rewards.append(reward)
-                if debug or step % (envs[i].MAX_STEPS // 2) == 0:
-                    print(f"{envs[i].id}: ACTION: {actions[i]}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
-            if debug:
-                print()
+            #     if debug or step % (envs[i].MAX_STEPS // 2) == 0:
+            #         print(f"{envs[i].id}: ACTION: {actions[i]}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
+            # if debug:
+            #     print()
 
             states = new_states
             

@@ -18,7 +18,7 @@ import torch.nn.functional as F
 from envs import DiscreteElasticityEnv
 import pandas as pd
 
-from spam_cluster import get_response_latenices
+from spam_cluster import get_response_times
 from pod_controller import set_container_cpu_values, get_loadbalancer_external_port
 from utils import save_training_data
 from train_ppo import set_other_priorities, set_other_utilization
@@ -167,7 +167,7 @@ def set_available_resource(envs, initial_resources):
     for env in envs:
         env.AVAILABLE = max_group
 
-
+# TODO: Change variables named latency with response time
 if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     Transition = namedtuple('Transition',
@@ -248,7 +248,7 @@ if __name__ == '__main__':
     MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{rf}_rf_{reqs_per_second}rps{alpha}alpha'
     if not variable_resources:
         MODEL += f'{RESOURCES}res'
-    suffixes = ['_double' if double else '', '_dueling' if dueling else '', '_varres' if variable_resources else '']
+    suffixes = ['_double' if double else '', '_dueling' if dueling else '', '_varres' if variable_resources else '', '_pretrained' if LOAD_WEIGHTS else '']
     MODEL += ''.join(suffixes)
     if independent_state:
         MODEL += "_independent_state"
@@ -297,7 +297,7 @@ if __name__ == '__main__':
     
     if LOAD_WEIGHTS:
         for i, agent in enumerate(agents):
-            agent.load_state_dict(torch.load(f'code/model_metric_data/{MODEL}/model_weights_agent_{i}.pth'))
+            agent.load_state_dict(torch.load(f'code/model_metric_data/dqn/mdqn310ep1000m25inc2_rf_20rps5.0alpha1000res_double_dueling/model_weights_agent_{i}.pth'))
         print(f"Loaded weights for agents")
 
     memories = [ReplayMemory(MEMORY_SIZE) for _ in range(n_agents)]
@@ -354,7 +354,7 @@ if __name__ == '__main__':
         for t in count():
             time.sleep(1)
             
-            latencies = [np.mean([latency if latency is not None else 2 for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
+            latencies = [np.mean([latency if latency is not None else 2 for latency in get_response_times(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
             for i, latency in enumerate(latencies):
                 agents_ep_mean_latency[i].append(latency)
 
@@ -385,10 +385,10 @@ if __name__ == '__main__':
                 if done:
                     next_states[i] = None
 
-                if debug or t % (envs[i].MAX_STEPS // 2) == 0:
-                    print(f"{envs[i].id}: ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
-            if debug or t % envs[i].MAX_STEPS / 2 == 0:
-                print()
+            #     if debug or t % (envs[i].MAX_STEPS // 2) == 0:
+            #         print(f"{envs[i].id}: ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
+            # if debug or t % envs[i].MAX_STEPS / 2 == 0:
+            #     print()
         
             [agents_ep_reward[i].append(rewards[i]) for i in range(n_agents)]
 

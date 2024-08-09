@@ -1,5 +1,5 @@
 from envs import ContinuousElasticityEnv, DiscreteElasticityEnv, InstantContinuousElasticityEnv
-from spam_cluster import get_response_latenices
+from spam_cluster import get_response_times
 from pod_controller import set_container_cpu_values, get_loadbalancer_external_port
 from utils import save_training_data
 
@@ -303,6 +303,7 @@ def set_other_utilization(env, other_envs):
 def set_other_priorities(env, other_envs):
     env.other_priorities = np.mean([o_env.priority for o_env in other_envs])
 
+# TODO: Change variables named latency with response time
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--episodes', type=int, default=300)
@@ -358,7 +359,8 @@ if __name__ == "__main__":
     update_every = args.update_every
 
     url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}"
-    USERS = 1 # Maybe change it later on to get "truer" latenies, but 1 is set for faster training
+    # USERS = 1 # Maybe change it later on to get "truer" latenies, but 1 is set for faster training
+    USERS = 1
 
     if discrete:
         envs = [DiscreteElasticityEnv(i, independent_state) for i in range(1, n_agents + 1)]
@@ -512,7 +514,7 @@ if __name__ == "__main__":
             # Separate avg latecy for every pod/env/agent/container in the cluster
             # latencies = [np.mean([latency for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict') if latency is not None]) for env in envs]
             # Give it 2, to avoid mean of None type
-            latencies = [np.mean([latency if latency is not None else 2 for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
+            latencies = [np.mean([latency if latency is not None else 2 for latency in get_response_times(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
 
             for i, latency in enumerate(latencies):
                 agents_ep_mean_latency[i].append(latency)
@@ -583,10 +585,10 @@ if __name__ == "__main__":
                     if debug:
                         print(f"Agent {i} action std decayed at time step {time_step}")
 
-                if debug or time_step % (envs[i].MAX_STEPS // 2) == 0:
-                    print(f"{envs[i].id}: ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
-            if debug or time_step % envs[i].MAX_STEPS / 2 == 0:
-                print()
+            #     if debug or time_step % (envs[i].MAX_STEPS // 2) == 0:
+            #         print(f"{envs[i].id}: ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
+            # if debug or time_step % envs[i].MAX_STEPS / 2 == 0:
+            #     print()
 
             states = new_states
             ep_rewards.append(np.mean(agents_step_rewards))
