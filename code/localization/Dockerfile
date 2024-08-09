@@ -2,8 +2,9 @@ FROM python:3.10.13
 
 WORKDIR /app
 
-ADD regressor.py /app
-ADD spring.pkl /app
+COPY regressor.py /app
+COPY spring.pkl /app
+COPY trained_model.pkl /app
 
 RUN pip install numpy fastapi uvicorn scikit-learn joblib pandas
 

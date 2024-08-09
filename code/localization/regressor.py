@@ -1,9 +1,9 @@
 import joblib
 
-from sklearn.neighbors import KNeighborsRegressor
+# from sklearn.neighbors import KNeighborsRegressor
 # from sklearn.neural_network import MLPRegressor
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+# from sklearn.pipeline import Pipeline
+# from sklearn.preprocessing import StandardScaler
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -18,16 +18,18 @@ import logging
 warnings.filterwarnings(action='ignore', category=UserWarning)
 logging.basicConfig(level=logging.CRITICAL)
 
-pipeline = Pipeline([
-    ("scaler", StandardScaler()),
-    ("regressor", KNeighborsRegressor(weights="distance", p=1, metric="euclidean", n_jobs=-1)),
-    # ("regressor", MLPRegressor(hidden_layer_sizes=(100, 100), max_iter=250, verbose=False))
-    ], verbose=True
-)
+# pipeline = Pipeline([
+#     ("scaler", StandardScaler()),
+#     ("regressor", KNeighborsRegressor(weights="distance", p=1, metric="euclidean", n_jobs=-1)),
+#     # ("regressor", MLPRegressor(hidden_layer_sizes=(100, 100), max_iter=250, verbose=False))
+#     ], verbose=True
+# )
 
 features, targets = joblib.load("./spring.pkl")
 
-model = pipeline.fit(features, targets)
+# model = pipeline.fit(features, targets)
+
+model = joblib.load("trained_model.pkl")
 
 unique_features = features[~targets.duplicated()]
 
