@@ -251,7 +251,10 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=64, help="Batch size for training")
     parser.add_argument('--gamma_latency', type=float, default=0.5, help="Latency normalization")
     parser.add_argument('--scale_action', type=int, default=50, help="How much does the agent scale with an action")
-    parser.add_argument('--load_weights', type=str, default=False, help="Load weights from previous training with a string of the model parent directory")
+    parser.add_argument('--load_weights', type=str, default='', help="Load weights from previous training with a string of the model parent directory")
+    parser.add_argument('--max_sigma', type=float, default=0.25, help="Max sigma for noise")
+    parser.add_argument('--min_sigma', type=float, default=0.01, help="Min sigma for noise")
+
 
     parser.add_argument('--priority', type=int, default=0, help="Options: 0, 1, 2")
 
@@ -286,6 +289,8 @@ if __name__ == "__main__":
     independent_state = args.independent_state
     priority = args.priority
     reset_env = args.reset_env
+    max_sigma = args.max_sigma
+    min_sigma = args.min_sigma
 
     url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}"
     # url = f"http://localhost:30888/predict"
@@ -317,17 +322,18 @@ if __name__ == "__main__":
             envs[2].priority = 0.1
         case _:
             train_priority = True
-            print("Using default priority setting...")
+            print("Using default priority setting... which is training priority...")
 
     agents = [DDPGagent(env, hidden_size=64, max_memory_size=5000, sigmoid_output=instant) for env in envs]
     # decay_period = envs[0].MAX_STEPS * episodes / 1.1 # Makes sense for now
     decay_period = envs[0].MAX_STEPS * episodes / 2.5
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]
     # noises = [OUNoise(env.action_space, max_sigma=0.25, min_sigma=0.025, decay_period=decay_period) for env in envs]
-    noises = [OUNoise(env.action_space, max_sigma=0.25, min_sigma=0.01, decay_period=decay_period) for env in envs]
+    noises = [OUNoise(env.action_space, max_sigma=max_sigma, min_sigma=min_sigma, decay_period=decay_period) for env in envs]
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0, decay_period=decay_period) for env in envs]
     # noises = [OUNoise(env.action_space, max_sigma=0.07, min_sigma=0, decay_period=decay_period) for env in envs]
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=1250) for env in envs]
+    print(f"Noise max sigma: {max_sigma}, decay period: {decay_period}, min sigma: {min_sigma}")
 
     parent_dir = 'code/model_metric_data/ddpg'
     MODEL = f'{episodes}ep_2rf_{reqs_per_second}rps{ALPHA_CONSTANT}alpha'
@@ -340,12 +346,12 @@ if __name__ == "__main__":
     if independent_state:
         MODEL += "_independent_state"
     if weights_dir:
-        [agent.load_model(f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_actor.pth", f"{parent_dir}/pretrained/{weights_dir}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
-        print(f"Successfully loaded weights from {parent_dir}/{weights_dir}")
+        [agent.load_model(f"{weights_dir}/agent_{i}_actor.pth", f"{weights_dir}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
+        print(f"Successfully loaded weights from {weights_dir}")
         MODEL += "_pretrained"
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
 
-    print(f"Training {n_agents} agents for {episodes} episodes with {RESOURCES} resources, {reqs_per_second} requests per second, {interval} ms interval, {ALPHA_CONSTANT} alpha, {bs} batch size\nModel name {MODEL}, OUNoise decay period {decay_period}\n")
+    print(f"Training {n_agents} agents for {episodes} episodes with {RESOURCES} resources, {reqs_per_second} requests per second, {interval} ms interval, {ALPHA_CONSTANT} alpha, {bs} batch size\nModel name {MODEL}\n")
 
     rewards = []
     avg_rewards = []

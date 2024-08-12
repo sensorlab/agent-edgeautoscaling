@@ -7,7 +7,7 @@ from train_ppo import set_other_priorities, set_other_utilization
 from pod_controller import set_container_cpu_values
 from envs import ContinuousElasticityEnv, InstantContinuousElasticityEnv
 
-def infer_ddpg(n_agents=3, resources=1000, instant=False, independent=False, hack=False, model=None, debug=False, action_interval=1, priority=0):
+def infer_ddpg(n_agents=3, resources=1000, instant=False, independent=False, hack=False, model=None, debug=False, action_interval=1, priorities=[1.0, 1.0, 1.0]):
     if instant:
         envs = [InstantContinuousElasticityEnv(i, independent_state=independent) for i in range(1, n_agents + 1)]
     else:
@@ -28,18 +28,6 @@ def infer_ddpg(n_agents=3, resources=1000, instant=False, independent=False, hac
         else:
             print(f'{model}/agent_{id}_actor.pth', f'{model}/agent_{id}_critic.pth')
             agent.load_model(f'{model}/agent_{id}_actor.pth', f'{model}/agent_{id}_critic.pth')
-
-
-    priorities = [1.0, 1.0, 1.0]
-    match priority:
-        case 1:
-            priorities = [1.0, 0.1, 0.1]
-        case 2:
-            priorities = [0.1, 1.0, 0.1]
-        case 3:
-            priorities = [0.1, 0.1, 1.0]
-        case _:
-            print("Using default priority setting... [1, 1, ..., 1]")
 
     for i, env in enumerate(envs):
         env.DEBUG = False
@@ -77,6 +65,7 @@ if __name__ == '__main__':
     parser.add_argument('--resources', type=int, default=1000)
     parser.add_argument('--load_model', type=str, default='code/model_metric_data/ddpg/221ep_2rf_20rps5.0alpha_50scale1000resources')
     parser.add_argument('--action_interval', type=int, default=5)
+    parser.add_argument('--priorities', type=float, nargs='+', default=[1.0, 1.0, 1.0], help='List of priorities')
 
     parser.add_argument('--instant', action='store_true', help='Instant')
     parser.add_argument('--independent', action='store_true', help='Independent')
@@ -88,4 +77,4 @@ if __name__ == '__main__':
 
     # set_container_cpu_values(100)
 
-    infer_ddpg(n_agents=n_agents, resources=args.resources, instant=args.instant, independent=args.independent, hack=args.hack, model=args.load_model, debug=args.debug, action_interval=args.action_interval, priority=args.priority)
+    infer_ddpg(n_agents=n_agents, resources=args.resources, instant=args.instant, independent=args.independent, hack=args.hack, model=args.load_model, debug=args.debug, action_interval=args.action_interval, priorities=args.priorities)

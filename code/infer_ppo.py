@@ -5,7 +5,7 @@ import numpy as np
 import time
 import argparse
 
-def infer_ppo(n_agents=3, resources=1000, initial_action_std=1e-10, instant=False, discrete=False, independent=False, instant_hack=False, model=None, debug=False, action_interval=1, priority=0):
+def infer_ppo(n_agents=3, resources=1000, initial_action_std=1e-10, instant=False, discrete=False, independent=False, instant_hack=False, model=None, debug=False, action_interval=1, priorities=[1.0, 1.0, 1.0]):
     if discrete:
         envs = [DiscreteElasticityEnv(i, independent_state=independent) for i in range(1, n_agents + 1)]
     else:
@@ -37,17 +37,6 @@ def infer_ppo(n_agents=3, resources=1000, initial_action_std=1e-10, instant=Fals
         else:
             agent.load(f'{model}/agent_{id}.pth')
             print(f'Loaded {model}/agent_{id}.pth')
-
-    priorities = [1.0, 1.0, 1.0]
-    match priority:
-        case 1:
-            priorities = [1.0, 0.1, 0.1]
-        case 2:
-            priorities = [0.1, 1.0, 0.1]
-        case 3:
-            priorities = [0.1, 0.1, 1.0]
-        case _:
-            print("Using default priority setting... [1, 1, ..., 1]")
 
     for i, env in enumerate(envs):
         env.DEBUG = False
@@ -86,8 +75,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--priority', type=int, default=0, help="Options: 0, 1, 2... 0 means to default priority")
     parser.add_argument('--resources', type=int, default=1000)
-    parser.add_argument('--load_model', type=str, default='code/model_metric_data/ppo/210ep_rf_2_20rps10kepochs5alpha10epupdate50scale_a_1000resources')
+    parser.add_argument('--load_model', type=str, default='code/model_metric_data/ppo/610ep_rf_2_20rps10kepochs5alpha10epupdate50scale_a_1000resources_pretrained')
     parser.add_argument('--action_interval', type=int, default=5)
+    parser.add_argument('--priorities', type=float, nargs='+', default=[1.0, 1.0, 1.0], help='List of priorities')
 
     parser.add_argument('--instant', action='store_true', help='Instant')
     parser.add_argument('--discrete', action='store_true', help='Discrete')
@@ -101,4 +91,4 @@ if __name__ == '__main__':
 
     # set_container_cpu_values(100)
 
-    infer_ppo(n_agents=n_agents, resources=args.resources, initial_action_std=initial_action_std, instant=args.instant, discrete=args.discrete, independent=args.independent, instant_hack=args.instant_hack, model=args.load_model, debug=args.debug, action_interval=args.action_interval, priority=args.priority)
+    infer_ppo(n_agents=n_agents, resources=args.resources, initial_action_std=initial_action_std, instant=args.instant, discrete=args.discrete, independent=args.independent, instant_hack=args.instant_hack, model=args.load_model, debug=args.debug, action_interval=args.action_interval, priorities=args.priorities)
