@@ -27,7 +27,7 @@ def infer_mdqn(n_agents=3, model='mdqn300ep500m', resources=1000, increment=25, 
 
     for i, agent in enumerate(agents):
         # agent.load_state_dict(torch.load(f'trained/{model}/model_weights_agent_{i}.pth'))
-        # agent.load_state_dict(torch.load(f'code/model_metric_data/{model}/model_weights_agent_{i}.pth'))
+        # agent.load_state_dict(torch.load(f'src/model_metric_data/{model}/model_weights_agent_{i}.pth'))
         agent.load_state_dict(torch.load(f'{model}/model_weights_agent_{2}.pth'))
         print(f'Loaded weights for agent {i}')
         agent.eval()
@@ -82,8 +82,8 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action='store_true', help='Debug')
     parser.add_argument('--priorities', type=float, nargs='+', default=[1.0, 1.0, 1.0], help='List of priorities')
     # parser.add_argument('--priority', type=int, default=0, help="Options: 0, 1, 2... 0 means default priority")
-    # parser.add_argument('--load_model', type=str, default='code/model_metric_data/dqn/mdqn310ep1000m25inc2_rf_20rps5.0alpha1000res_double_dueling', help='Model to load') # Best model so far
-    parser.add_argument('--load_model', type=str, default='code/model_metric_data/dqn/mdqn610ep1000m25inc2_rf_20rps5.0alpha1000res_double_dueling_pretrained', help='Model to load')
+    # parser.add_argument('--load_model', type=str, default='src/model_metric_data/dqn/mdqn310ep1000m25inc2_rf_20rps5.0alpha1000res_double_dueling', help='Model to load') # Best model so far
+    parser.add_argument('--load_model', type=str, default='src/model_metric_data/dqn/mdqn610ep1000m25inc2_rf_20rps5.0alpha1000res_double_dueling_pretrained', help='Model to load')
     
     args = parser.parse_args()
 
@@ -92,7 +92,7 @@ if __name__ == "__main__":
     # model = 'variational_loading/variational_resources/mdqn600ep500m25inc1000mcmax50rps500interval0.75alpha_double_dueling' # best model so far
     # model = 'new_reward/dqn/mdqn300ep500m25inc1000mcmax50rps1000interval0.5alpha0.5gl_double_dueling_varres' # good, better changeable resources
     # model = 'dqn/mdqn310ep1000m25inc2_rf_20rps5.0alpha1000res_double_dueling'
-    # model = 'code/model_metric_data/dqn/mdqn310ep1000m25inc2_rf_20rps5.0alpha1000res_double_dueling'
+    # model = 'src/model_metric_data/dqn/mdqn310ep1000m25inc2_rf_20rps5.0alpha1000res_double_dueling'
 
     # priorities = [1.0, 1.0, 1.0]
     # match args.priority:

@@ -1,9 +1,10 @@
 import re
 import yaml
-import time
 import requests
 import json
 from kubernetes import client, config
+import numpy as np
+import pandas as pd
 
 from node import Node
 
@@ -39,20 +40,15 @@ def init_nodes(debug=False, custom_label='type=ray'):
 
 def make_request(url, data):
     headers = {'Content-Type': 'application/json'}
-    start_time = time.time()
     response = None
     try:
-        response = requests.post(url, data=json.dumps(data), headers=headers, timeout=5) # 5 seconds timeout
+        response = requests.post(url, data=json.dumps(data), headers=headers, timeout=30)
     except Exception as e:
         pass
-    end_time = time.time()
-    latency = end_time - start_time
-    # print(f"Request latency: {latency} seconds")
     if response is not None and response.status_code != 200:
         # print(f"Error making prediction: {response.text}")
         return None
-    # print(response.json())
-    return latency
+    return response.elapsed.total_seconds()
 
 def increment_last_number(input_string):
     match = re.search(r'(\d+)$', input_string)
@@ -66,6 +62,34 @@ def increment_last_number(input_string):
         return input_string + '1'
 
 def load_config():
-    with open('code/application_config.yaml', 'r') as f:
+    with open('src/application_config.yaml', 'r') as f:
         config = yaml.safe_load(f)
     return config
+
+def calculate_dynamic_rps(episode, reqs_per_second, min_rps, max_limit_rps=100, scale_factor=0.005, randomize_reqs=True):
+    dynamic_max_rps = int(reqs_per_second + episode * scale_factor * reqs_per_second)
+    dynamic_max_rps = min(dynamic_max_rps, max_limit_rps)
+    random_rps = np.random.randint(min_rps, dynamic_max_rps) if randomize_reqs else reqs_per_second
+    return dynamic_max_rps, random_rps
+
+def save_training_data(path, rewards, mean_latencies, agents_summed_rewards, resource_dev=None, agents_mean_latenices=None):
+    ep_summed_rewards_df = pd.DataFrame({'Episode': range(len(rewards)), 'Reward': rewards})
+    ep_summed_rewards_df.to_csv(f'{path}/ep_summed_rewards.csv', index=False)
+
+    ep_latencies_df = pd.DataFrame({'Episode': range(len(mean_latencies)), 'Mean Latency': mean_latencies})
+    ep_latencies_df.to_csv(f'{path}/ep_latencies.csv', index=False)
+
+    for agent_idx, rewards in enumerate(agents_summed_rewards):
+        filename = f'{path}/agent_{agent_idx}_ep_summed_rewards.csv'
+        agent_rewards_df = pd.DataFrame({'Episode': range(len(rewards)), 'Reward': rewards})
+        agent_rewards_df.to_csv(filename, index=False)
+
+    if resource_dev:
+        resource_dev_df = pd.DataFrame({'Episode': range(len(resource_dev)), 'Resource Deviation': resource_dev})
+        resource_dev_df.to_csv(f'{path}/resource_dev.csv', index=False)
+    
+    if agents_mean_latenices:
+        for agent_idx, latencies in enumerate(agents_mean_latenices):
+            filename = f'{path}/agent_{agent_idx}_ep_mean_latencies.csv'
+            agent_latenices_df = pd.DataFrame({'Episode': range(len(latencies)), 'Latency': latencies})
+            agent_latenices_df.to_csv(filename, index=False)

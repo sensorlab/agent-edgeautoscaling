@@ -417,7 +417,7 @@ if __name__ == "__main__":
         agent.policy.train()
         agent.policy_old.train()
 
-    parent_dir = 'code/model_metric_data/ppo'
+    parent_dir = 'src/model_metric_data/ppo'
     # MODEL = f'{episodes}ep{RESOURCES}resources_rf_{reward_function}_{reqs_per_second}rps{interval}interval{k_epochs}kepochs{ALPHA_CONSTANT}alpha{scale_action}scale_a{priority}priority'
     MODEL = f'{episodes}ep_rf_{reward_function}_{reqs_per_second}rps{k_epochs}kepochs{int(ALPHA_CONSTANT)}alpha{update_every}epupdate'
     if priority != 0:
@@ -490,7 +490,7 @@ if __name__ == "__main__":
         # random_rps = np.random.randint(min_rps, reqs_per_second) if randomize_reqs else reqs_per_second
         # In this training the random rps is handled by the loading script
         
-        command = ['python', 'code/spam_cluster.py', '--users', str(reqs_per_second), '--interval', str(interval), '--variable', '--all']
+        command = ['python', 'src/spam_cluster.py', '--users', str(reqs_per_second), '--interval', str(interval), '--variable', '--all']
         if randomize_reqs:
             command.append('--random_rps')
         spam_process = subprocess.Popen(command)

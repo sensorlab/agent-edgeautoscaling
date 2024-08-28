@@ -46,7 +46,7 @@ if __name__ == '__main__':
         env.DEBUG = False
         env.scale_action = scale_action
     agents = [DDPGagent(env, hidden_size=64, max_memory_size=60000) for env in envs]
-    parent_dir = 'code/model_metric_data/ddpg/pretrained'
+    parent_dir = 'src/model_metric_data/ddpg/pretrained'
     MODEL = f'{episodes}ep{resources}resources{reqs_per_second}rps{interval}interval{alpha}alpha{scale_action}scale_a{gamma_latency}gl'
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
 
@@ -63,7 +63,7 @@ if __name__ == '__main__':
 
     for episode in tqdm(range(episodes)):
         random_rps = np.random.randint(10, reqs_per_second)
-        spam_process = subprocess.Popen(['python', 'code/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval)])
+        spam_process = subprocess.Popen(['python', 'src/spam_cluster.py', '--users', str(random_rps), '--interval', str(interval)])
         print(f"Loading cluster with {random_rps} requests per second")
 
         states = [np.array(env.reset()).flatten() for env in envs]

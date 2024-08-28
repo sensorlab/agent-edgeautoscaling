@@ -335,7 +335,7 @@ if __name__ == "__main__":
     # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=1250) for env in envs]
     print(f"Noise max sigma: {max_sigma}, decay period: {decay_period}, min sigma: {min_sigma}")
 
-    parent_dir = 'code/model_metric_data/ddpg'
+    parent_dir = 'src/model_metric_data/ddpg'
     MODEL = f'{episodes}ep_2rf_{reqs_per_second}rps{ALPHA_CONSTANT}alpha'
     if instant:
         MODEL += '_instant'
@@ -385,7 +385,7 @@ if __name__ == "__main__":
             for env in envs:
                 env.priority = random.randint(1, 10) / 10.0
 
-        command = ['python', 'code/spam_cluster.py', '--users', str(reqs_per_second), '--interval', str(interval), '--variable', '--all']
+        command = ['python', 'src/spam_cluster.py', '--users', str(reqs_per_second), '--interval', str(interval), '--variable', '--all']
         if randomize_reqs:
             command.append('--random_rps')
         spam_process = subprocess.Popen(command)

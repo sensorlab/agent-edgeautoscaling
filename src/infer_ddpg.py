@@ -17,9 +17,9 @@ def infer_ddpg(n_agents=3, resources=1000, instant=False, independent=False, hac
 
     agents = [DDPGagent(env, hidden_size=64, sigmoid_output=instant) for env in envs]
     # model_folder = 'trained/continous/ddpg/600ep1000resources50rps1000interval0.6alpha50scale_a0.5gl'
-    # model_folder = 'code/model_metric_data/ddpg/300ep1000resources50rps1000interval0.5alpha50scale_a0.5gl_pretrained'
-    # model_folder = 'code/model_metric_data/ddpg/pretrained/100ep1000resources50rps1000interval0.75alpha50scale_a0.5gl'
-    # model_folder = 'code/model_metric_data/ddpg/221ep_2rf_20rps5.0alpha_50scale1000resources'
+    # model_folder = 'src/model_metric_data/ddpg/300ep1000resources50rps1000interval0.5alpha50scale_a0.5gl_pretrained'
+    # model_folder = 'src/model_metric_data/ddpg/pretrained/100ep1000resources50rps1000interval0.75alpha50scale_a0.5gl'
+    # model_folder = 'src/model_metric_data/ddpg/221ep_2rf_20rps5.0alpha_50scale1000resources'
 
     for id, agent in enumerate(agents):
         if hack:
@@ -63,7 +63,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--priority', type=int, default=0, help="Options: 0, 1, 2... 0 means default")
     parser.add_argument('--resources', type=int, default=1000)
-    parser.add_argument('--load_model', type=str, default='code/model_metric_data/ddpg/221ep_2rf_20rps5.0alpha_50scale1000resources')
+    parser.add_argument('--load_model', type=str, default='src/model_metric_data/ddpg/221ep_2rf_20rps5.0alpha_50scale1000resources')
     parser.add_argument('--action_interval', type=int, default=5)
     parser.add_argument('--priorities', type=float, nargs='+', default=[1.0, 1.0, 1.0], help='List of priorities')
 

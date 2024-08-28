@@ -244,7 +244,7 @@ if __name__ == '__main__':
 
     set_container_cpu_values(cpus=100)
 
-    parent_dir = 'code/model_metric_data/dqn'
+    parent_dir = 'src/model_metric_data/dqn'
     MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{rf}_rf_{reqs_per_second}rps{alpha}alpha'
     if not variable_resources:
         MODEL += f'{RESOURCES}res'
@@ -297,7 +297,7 @@ if __name__ == '__main__':
     
     if LOAD_WEIGHTS:
         for i, agent in enumerate(agents):
-            agent.load_state_dict(torch.load(f'code/model_metric_data/dqn/mdqn310ep1000m25inc2_rf_20rps5.0alpha1000res_double_dueling_pretrained?/model_weights_agent_{i}.pth'))
+            agent.load_state_dict(torch.load(f'src/model_metric_data/dqn/mdqn310ep1000m25inc2_rf_20rps5.0alpha1000res_double_dueling_pretrained?/model_weights_agent_{i}.pth'))
         print(f"Loaded weights for agents")
 
     memories = [ReplayMemory(MEMORY_SIZE) for _ in range(n_agents)]
@@ -336,7 +336,7 @@ if __name__ == '__main__':
             for env in envs:
                 env.priority = random.randint(1, 10) / 10.0
 
-        command = ['python', 'code/spam_cluster.py', '--users', str(reqs_per_second), '--interval', str(interval), '--variable', '--all']
+        command = ['python', 'src/spam_cluster.py', '--users', str(reqs_per_second), '--interval', str(interval), '--variable', '--all']
         if randomize_reqs:
             command.append('--random_rps')
         spam_process = subprocess.Popen(command)

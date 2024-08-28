@@ -18,10 +18,10 @@ def infer_ppo(n_agents=3, resources=1000, initial_action_std=1e-10, instant=Fals
 
     agents = [PPO(env, has_continuous_action_space=not discrete, action_std_init=initial_action_std, sigmoid_output=instant) for env in envs]
 
-    # model_folder = f'code/model_metric_data/ppo/52ep1000resources_rf_2_75rps1000interval9kepochs5.0alpha50scale_a0.5gl_NOreseting'
-    # model_folder = f'code/model_metric_data/ppo/200ep_rf_2_60rps8kepochs5alpha_independent_state_instantscale_NOreseting_vari_res'
-    # model_folder = f'code/model_metric_data/ppo/66ep_rf_2_30rps8kepochs5alpha50scale_a0priority_newloading_instantscale_NOreseting_vari_res_pretrained' # yoink the first or second agent only
-    # model_folder = f'code/model_metric_data/ppo/210ep_rf_2_20rps10kepochs5alpha10epupdate50scale_a_1000resources'
+    # model_folder = f'src/model_metric_data/ppo/52ep1000resources_rf_2_75rps1000interval9kepochs5.0alpha50scale_a0.5gl_NOreseting'
+    # model_folder = f'src/model_metric_data/ppo/200ep_rf_2_60rps8kepochs5alpha_independent_state_instantscale_NOreseting_vari_res'
+    # model_folder = f'src/model_metric_data/ppo/66ep_rf_2_30rps8kepochs5alpha50scale_a0priority_newloading_instantscale_NOreseting_vari_res_pretrained' # yoink the first or second agent only
+    # model_folder = f'src/model_metric_data/ppo/210ep_rf_2_20rps10kepochs5alpha10epupdate50scale_a_1000resources'
     # model_folder = 'trained/ppo/100ep1000resources_rf_2_75rps1000interval9kepochs5.0alpha50scale_a_instantscale_NOreseting_vari_res'
     # model_folder = 'trained/ppo/100ep_rf_2_30rps10kepochs5alpha50scale_a0priority_newloading_instantscale_NOreseting_vari_res'
     # model_folder = 'trained/ppo/400ep_rf_2_30rps8kepochs5alpha50scale_a0priority_newloading_instantscale_NOreseting_vari_res'
@@ -75,7 +75,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--priority', type=int, default=0, help="Options: 0, 1, 2... 0 means to default priority")
     parser.add_argument('--resources', type=int, default=1000)
-    parser.add_argument('--load_model', type=str, default='code/model_metric_data/ppo/610ep_rf_2_20rps10kepochs5alpha10epupdate50scale_a_1000resources_pretrained')
+    parser.add_argument('--load_model', type=str, default='src/model_metric_data/ppo/610ep_rf_2_20rps10kepochs5alpha10epupdate50scale_a_1000resources_pretrained')
     parser.add_argument('--action_interval', type=int, default=5)
     parser.add_argument('--priorities', type=float, nargs='+', default=[1.0, 1.0, 1.0], help='List of priorities')
 
