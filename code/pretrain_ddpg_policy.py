@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from pod_controller import set_container_cpu_values
 from utils import save_training_data
-from spam_cluster import spam_requests_single
+from spam_cluster import get_response_times
 
 from envs import ContinuousElasticityEnv
 from train_ddpg import DDPGagent, set_available_resource
@@ -77,7 +77,7 @@ if __name__ == '__main__':
             start_time = time.time()
             agents_step_rewards = []
 
-            latencies = spam_requests_single(USERS, url)
+            latencies = get_response_times(USERS, url)
             latency = np.mean([latency for latency in latencies if latency is not None])
             ep_latencies.append(latency)
 

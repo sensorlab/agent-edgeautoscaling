@@ -297,7 +297,7 @@ if __name__ == '__main__':
     
     if LOAD_WEIGHTS:
         for i, agent in enumerate(agents):
-            agent.load_state_dict(torch.load(f'code/model_metric_data/dqn/mdqn310ep1000m25inc2_rf_20rps5.0alpha1000res_double_dueling/model_weights_agent_{i}.pth'))
+            agent.load_state_dict(torch.load(f'code/model_metric_data/dqn/mdqn310ep1000m25inc2_rf_20rps5.0alpha1000res_double_dueling_pretrained?/model_weights_agent_{i}.pth'))
         print(f"Loaded weights for agents")
 
     memories = [ReplayMemory(MEMORY_SIZE) for _ in range(n_agents)]
@@ -316,7 +316,7 @@ if __name__ == '__main__':
     # url = f"http://localhost:30888/predict"
 
     for i_episode in tqdm(range(EPISODES)):
-        if i_episode % 10 == 0 and i_episode != 0 and SAVE_WEIGHTS:
+        if i_episode % 50 == 0 and i_episode != 0 and SAVE_WEIGHTS:
             for i, agent in enumerate(agents):
                 torch.save(agent.state_dict(), f'{parent_dir}/{MODEL}/ep_{i_episode}_agent_{i}.pth')
                 print(f"Checkpoint: Saved weights for agent {i}")

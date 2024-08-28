@@ -13,7 +13,7 @@ class Node:
         self.last_pod_limits = dict()
 
     def update_containers(self, debug=False, custom_label='type=ray'):
-        self.containers = dict()
+        #self.containers = dict()
         if debug:
             config.load_kube_config()
         else:

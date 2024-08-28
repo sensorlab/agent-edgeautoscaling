@@ -462,7 +462,7 @@ if __name__ == "__main__":
 
     for episode in tqdm(range(episodes)):
         # Checkpoint
-        if episode % 10 == 0 and episode != 0 and make_checkpoints:
+        if episode % 50 == 0 and episode != 0 and make_checkpoints:
             for i, agent in enumerate(agents):
                 agent.save(f"{parent_dir}/{MODEL}/ep_{episode}_agent_{i}.pth")
             print(f"Checkpoint saved at episode {episode} for {n_agents} agents")
@@ -585,10 +585,10 @@ if __name__ == "__main__":
                     if debug:
                         print(f"Agent {i} action std decayed at time step {time_step}")
 
-            #     if debug or time_step % (envs[i].MAX_STEPS // 2) == 0:
-            #         print(f"{envs[i].id}: ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
-            # if debug or time_step % envs[i].MAX_STEPS / 2 == 0:
-            #     print()
+                if debug:
+                    print(f"{envs[i].id}: ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
+            if debug:
+                print()
 
             states = new_states
             ep_rewards.append(np.mean(agents_step_rewards))

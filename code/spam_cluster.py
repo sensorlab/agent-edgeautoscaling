@@ -88,16 +88,19 @@ if __name__ == "__main__":
     random_rps = args.random_rps
 
     processes = []
+    ingress_port = 30792
 
     if not all_services:
         # url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}/api{service}/predict"
-        url = f"http://localhost:31923/api{service}/predict" # Out ingress port of the service
+        url = f"http://localhost:{ingress_port}/api{service}/predict" # Out ingress port of the service
+        
+        # url = f"http://localhost:{ingress_port}/predict" # API for HPA scaling, 1 igress linked to services to many pods (Round Robin load balancing)
         spam_requests(url, num_users, interval, variable=variable)
     else:
         urls = [
-            f"http://localhost:31923/api1/predict",
-            f"http://localhost:31923/api2/predict",
-            f"http://localhost:31923/api3/predict",
+            f"http://localhost:{ingress_port}/api1/predict",
+            f"http://localhost:{ingress_port}/api2/predict",
+            f"http://localhost:{ingress_port}/api3/predict",
         ]
         with ThreadPoolExecutor() as executor:
             futures = []

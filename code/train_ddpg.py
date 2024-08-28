@@ -364,7 +364,7 @@ if __name__ == "__main__":
 
     for episode in tqdm(range(episodes)):
         # Checkpoint
-        if episode % 10 == 0 and episode != 0 and make_checkpoints:
+        if episode % 50 == 0 and episode != 0 and make_checkpoints:
             for i, agent in enumerate(agents):
                 agent.save_model(f"{parent_dir}/{MODEL}/ep_{episode}_agent_{i}")
             print(f"Checkpoint saved at episode {episode} for {n_agents} agents")

@@ -8,19 +8,8 @@ from kubernetes import config, client
 from concurrent.futures import ThreadPoolExecutor
 
 from utils import init_nodes
+from pod_controller import get_loadbalancer_external_port
 
-
-
-def get_loadbalancer_external_port(service_name, namespace='default'):
-    try:
-        config.load_kube_config()
-        v1 = client.CoreV1Api()
-        service = v1.read_namespaced_service(service_name, namespace)
-        external_port = service.spec.ports[0].node_port
-        return external_port
-    except Exception as e:
-        print(f"Error retrieving load balancer external port: {e}")
-        return None
 
 def make_request(url, data):
     response = requests.post(url, json=data)
