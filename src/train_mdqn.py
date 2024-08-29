@@ -39,22 +39,18 @@ class ReplayMemory(object):
 
 class DQN(nn.Module):
 
-    def __init__(self, n_observations, n_actions):
+    def __init__(self, n_observations, n_actions, hidden_size=64):
         super(DQN, self).__init__()
-        # self.layer1 = nn.Linear(n_observations, 128)
-        # self.layer2 = nn.Linear(128, 128)
-        # self.layer3 = nn.Linear(128, n_actions)
-        self.layer1 = nn.Linear(n_observations, 64)
-        self.layer2 = nn.Linear(64, 128)
-        self.layer3 = nn.Linear(128, 64)
-        self.layer4 = nn.Linear(64, n_actions)
+        self.layer1 = nn.Linear(n_observations, hidden_size)
+        self.layer2 = nn.Linear(hidden_size, hidden_size * 2)
+        self.layer3 = nn.Linear(hidden_size * 2, hidden_size)
+        self.layer4 = nn.Linear(hidden_size, n_actions)
 
     # Called with either one element to determine next action, or a batch
     # during optimization. Returns tensor([[left0exp,right0exp]...]).
     def forward(self, x):
         x = F.relu(self.layer1(x))
         x = F.relu(self.layer2(x))
-        # return self.layer3(x)
         x = F.relu(self.layer3(x))
         return self.layer4(x)
 
@@ -87,97 +83,117 @@ class DuelingDQN(nn.Module):
         return value + advantage - advantage.mean()
 
 
-def optimize_model(policy_net, target_net, memory, optimizer): #, scheduler):
-    if len(memory) < BATCH_SIZE:
-        return
-    transitions = memory.sample(BATCH_SIZE)
-    # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
-    # detailed explanation). This converts batch-array of Transitions
-    # to Transition of batch-arrays.
-    batch = Transition(*zip(*transitions))
+Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
 
-    # Compute a mask of non-final states and concatenate the batch elements
-    # (a final state would've been the one after which simulation ended)
-    non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                        batch.next_state)), device=device, dtype=torch.bool)
-    non_final_next_states = torch.cat([s for s in batch.next_state
-                                                if s is not None])
-    state_batch = torch.cat(batch.state)
-    action_batch = torch.cat(batch.action)
-    reward_batch = torch.cat(batch.reward)
 
-    # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
-    # columns of actions taken. These are the actions which would've been taken
-    # for each batch state according to policy_net
-    state_action_values = policy_net(state_batch).gather(1, action_batch)
-
-    # Compute V(s_{t+1}) for all next states.
-    # Expected values of actions for non_final_next_states are computed based
-    # on the "older" target_net; selecting their best reward with max(1).values
-    # This is merged based on the mask, such that we'll have either the expected
-    # state value or 0 in case the state was final.
-    next_state_values = torch.zeros(BATCH_SIZE, device=device)
-    with torch.no_grad():
-        if double:
-            next_state_actions = policy_net(non_final_next_states).max(1)[1].unsqueeze(1)
-            next_state_values[non_final_mask] = target_net(non_final_next_states).gather(1, next_state_actions).squeeze(1)
+class DQNAgent:
+    def __init__(self, env, double=False, dueling=False, hidden_size=64, learning_rate=1e-4, gamma=0.99, epsilon=0.9, epsilon_min=0.15, epsilon_decay=1500, memory_size=1000, device="cpu"):
+        self.hidden_size = hidden_size
+        self.learning_rate = learning_rate
+        self.gamma = gamma
+        self.epsilon = epsilon
+        self.epsilon_min = epsilon_min
+        self.epsilon_decay = epsilon_decay
+        self.memory = ReplayMemory(memory_size)
+        self.criterion = nn.MSELoss()
+        self.device = device
+        self.double = double
+        if dueling:
+            self.policy_net = DuelingDQN(env.observation_space.shape[0], env.action_space.n).to(self.device)
+            self.target_net = DuelingDQN(env.observation_space.shape[0], env.action_space.n).to(self.device)
         else:
-            next_state_values[non_final_mask] = target_net(non_final_next_states).max(1).values
-    # Compute the expected Q values
-    expected_state_action_values = (next_state_values * GAMMA) + reward_batch
+            self.policy_net = DQN(env.observation_space.shape[0], env.action_space.n).to(self.device)
+            self.target_net = DQN(env.observation_space.shape[0], env.action_space.n).to(self.device)
+        self.optimizer = optim.AdamW(self.policy_net.parameters(), lr=self.learning_rate, amsgrad=True)
+        self.env = env
+        self.steps_done = 0
 
-    # Compute Huber loss
-    criterion = nn.SmoothL1Loss()
-    loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+    def get_action(self, state):
+        state = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
+        act_values = self.policy_net(state)
+        return torch.argmax(act_values[0]).item()
+    
+    def select_action(self, state):
+        sample = random.random()
+        eps_threshold = self.epsilon_min + (self.epsilon - self.epsilon_min) * \
+            math.exp(-1. * self.steps_done / self.epsilon_decay)
+        if self.steps_done % 100 == 0:
+            print(f"eps_threshold: {eps_threshold} at step {self.steps_done}")
+        self.steps_done += 1
+        if sample > eps_threshold:
+            with torch.no_grad():
+                # t.max(1) will return the largest column value of each row.
+                # second column on max result is index of where max element was
+                # found, so we pick action with the larger expected reward.
+                return self.policy_net(state).max(1).indices.view(1, 1)
+        else:
+            return torch.tensor([[self.env.action_space.sample()]], device=self.device, dtype=torch.long)
 
-    # Optimize the model
-    optimizer.zero_grad()
-    loss.backward()
-    # In-place gradient clipping
-    torch.nn.utils.clip_grad_value_(policy_net.parameters(), 100)
-    optimizer.step()
-    # scheduler.step()
+    def update(self, batch_size):
+        if len(self.memory) < batch_size:
+            return
+        transitions = self.memory.sample(batch_size)
+        # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
+        # detailed explanation). This converts batch-array of Transitions
+        # to Transition of batch-arrays.
+        batch = Transition(*zip(*transitions))
 
+        # Compute a mask of non-final states and concatenate the batch elements
+        # (a final state would've been the one after which simulation ended)
+        non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
+                                            batch.next_state)), device=self.device, dtype=torch.bool)
+        non_final_next_states = torch.cat([s for s in batch.next_state
+                                                    if s is not None])
+        state_batch = torch.cat(batch.state)
+        action_batch = torch.cat(batch.action)
+        reward_batch = torch.cat(batch.reward)
 
-def select_action(state, policy_net, env):
-    global steps_done
-    sample = random.random()
-    eps_threshold = EPS_END + (EPS_START - EPS_END) * \
-        math.exp(-1. * steps_done / EPS_DECAY)
-    if steps_done % 100 == 0:
-        print(f"eps_threshold: {eps_threshold} at step {steps_done}")
-    steps_done += 1
-    if sample > eps_threshold:
+        # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
+        # columns of actions taken. These are the actions which would've been taken
+        # for each batch state according to policy_net
+        state_action_values = self.policy_net(state_batch).gather(1, action_batch)
+
+        # Compute V(s_{t+1}) for all next states.
+        # Expected values of actions for non_final_next_states are computed based
+        # on the "older" target_net; selecting their best reward with max(1).values
+        # This is merged based on the mask, such that we'll have either the expected
+        # state value or 0 in case the state was final.
+        next_state_values = torch.zeros(batch_size, device=self.device)
         with torch.no_grad():
-            # t.max(1) will return the largest column value of each row.
-            # second column on max result is index of where max element was
-            # found, so we pick action with the larger expected reward.
-            return policy_net(state).max(1).indices.view(1, 1)
-    else:
-        return torch.tensor([[env.action_space.sample()]], device=device, dtype=torch.long)
+            if self.double:
+                next_state_actions = self.policy_net(non_final_next_states).max(1)[1].unsqueeze(1)
+                next_state_values[non_final_mask] = self.target_net(non_final_next_states).gather(1, next_state_actions).squeeze(1)
+            else:
+                next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1).values
+        # Compute the expected Q values
+        expected_state_action_values = (next_state_values * self.gamma) + reward_batch
+
+        # Compute Huber loss
+        criterion = nn.SmoothL1Loss()
+        loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+
+        # Optimize the model
+        self.optimizer.zero_grad()
+        loss.backward()
+        # In-place gradient clipping
+        torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100)
+        self.optimizer.step()
+    
+    def load(self, folder_path, agent_id=None):
+        self.policy_net.load_state_dict(torch.load(f"{folder_path}/model_weights_agent_{agent_id}.pth"))
+        self.target_net.load_state_dict(self.policy_net.state_dict())
+        print(f"Loaded weights for agent {agent_id}, located: {folder_path}")
+
+    def save(self, folder_path, agent_id=None):
+        torch.save(self.policy_net.state_dict(), f"{folder_path}/model_weights_agent_{agent_id}.pth")
+        print(f"Saved weights for agent {agent_id}, located: {folder_path}")
 
 
 # TODO: Change variables named latency with response time
 if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    Transition = namedtuple('Transition',
-                            ('state', 'action', 'next_state', 'reward'))
-
-    # BATCH_SIZE is the number of transitions sampled from the replay buffer
-    # GAMMA is the discount factor as mentioned in the previous section
-    # EPS_START is the starting value of epsilon
-    # EPS_END is the final value of epsilon
-    # EPS_DECAY controls the rate of exponential decay of epsilon, higher means a slower decay
-    # TAU is the update rate of the target network
-    # LR is the learning rate of the ``AdamW`` optimizer
     BATCH_SIZE = 128
-    GAMMA = 0.99
-    EPS_START = 0.9
-    # EPS_END = 0.25
-    EPS_END = 0.15
-    EPS_DECAY = 1500
     TAU = 0.005
-    LR = 1e-4
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--episodes', type=int, default=300)
@@ -186,18 +202,16 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', type=float, default=5.0, help="Weight for the shared reward, higher the more weight to latency, lower the more weight to efficiency")
     parser.add_argument('--n_agents', type=int, default=3)
     parser.add_argument('--rps', type=int, default=50, help="Requests per second for loading cluster")
-    parser.add_argument('--random_rps', type=bool, default=False, help="Train on random requests every episode")
     parser.add_argument('--interval', type=int, default=1000, help="Milliseconds interval for requests")
-    
     parser.add_argument('--priority', type=int, default=0, help="Priority for the environment")
     parser.add_argument('--reward_function', type=int, default=2, help="Setting for the reward function")
 
-    parser.add_argument('--dueling', type=bool, default=False, help="Dueling rl")
-    parser.add_argument('--double', type=bool, default=False, help="Double rl")
-    parser.add_argument('--load_weights', type=bool, default=False, help="Load weights from previous training")
     parser.add_argument('--variable_resources', type=bool, default=False, help="Random resources every 10 episodes")
-    parser.add_argument('--gamma_latency', type=float, default=0.5, help="Latency normalization")
 
+    parser.add_argument('--random_rps', action='store_true', default=False, help="Train on random requests every episode")
+    parser.add_argument('--dueling', action='store_true', default=False, help="Dueling rl")
+    parser.add_argument('--double', action='store_true', default=False, help="Double rl")
+    parser.add_argument('--load_weights', action='store_true', default=False, help="Load weights from previous training")
     parser.add_argument('--independent_state', action='store_true', default=False, help="Dont use metrics from other pods (except for available resources)")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
     parser.add_argument('--reset_env', action='store_true', default=False, help="Resetting the env every 10th episode")
@@ -211,7 +225,6 @@ if __name__ == '__main__':
     randomize_reqs = args.random_rps
     variable_resources = args.variable_resources
 
-    gamma_latency = args.gamma_latency
     debug = args.debug
     rf = args.reward_function
     priority = args.priority
@@ -229,8 +242,6 @@ if __name__ == '__main__':
     RESOURCES = args.init_resources
     INCREMENT_ACTION = args.increment_action
     USERS = 1
-    # reqs_per_second -= USERS # interval is set to 1s
-
 
     set_container_cpu_values(cpus=100)
 
@@ -271,30 +282,14 @@ if __name__ == '__main__':
             train_priority = True
             print("Using default priority setting...")
 
-    n_actions = envs[0].action_space.n
-    state = envs[0].reset()
-    n_observations = len(state) * len(state[0])
-    print(f"Number of observations: {n_observations} and number of actions: {n_actions}")
-
     set_available_resource(envs, RESOURCES)
 
-    if dueling:
-        agents = [DuelingDQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
-        target_nets = [DuelingDQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
-    else:
-        agents = [DQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
-        target_nets = [DQN(n_observations, n_actions).to(device) for _ in range(n_agents)]
+    agents = [DQNAgent(env, double=double, dueling=dueling, device=device, memory_size=MEMORY_SIZE) for env in envs]
     
     if LOAD_WEIGHTS:
         for i, agent in enumerate(agents):
-            agent.load_state_dict(torch.load(f'src/model_metric_data/dqn/mdqn310ep1000m25inc2_rf_20rps5.0alpha1000res_double_dueling_pretrained?/model_weights_agent_{i}.pth'))
+            agent.load(f'src/model_metric_data/dqn/mdqn310ep1000m25inc2_rf_20rps5.0alpha1000res_double_dueling_pretrained?', agent_id=i)
         print(f"Loaded weights for agents")
-
-    memories = [ReplayMemory(MEMORY_SIZE) for _ in range(n_agents)]
-    optimizers = [optim.AdamW(agent.parameters(), lr=LR, amsgrad=True) for agent in agents]
-
-    for target_net, agent in zip(target_nets, agents):
-        target_net.load_state_dict(agent.state_dict())
 
     steps_done = 0
     summed_rewards = []
@@ -308,7 +303,7 @@ if __name__ == '__main__':
     for i_episode in tqdm(range(EPISODES)):
         if i_episode % 50 == 0 and i_episode != 0 and SAVE_WEIGHTS:
             for i, agent in enumerate(agents):
-                torch.save(agent.state_dict(), f'{parent_dir}/{MODEL}/ep_{i_episode}_agent_{i}.pth')
+                agent.save(f'{parent_dir}/{MODEL}/ep_{i_episode}_agent_{i}.pth')
                 print(f"Checkpoint: Saved weights for agent {i}")
         if variable_resources and i_episode % 5 == 0:
             RESOURCES = random.choice([500, 750, 1000, 1250, 1500, 1750, 2000])
@@ -354,10 +349,9 @@ if __name__ == '__main__':
             priority_weighted_latency = sum((1 + env.priority) * latency for env, latency in zip(envs, latencies))
             shared_reward = 1 - alpha * (priority_weighted_latency - 0.01)
 
-            actions = [select_action(state, agent, env) for state, agent, env in zip(states, agents, envs)]
+            actions = [agent.select_action(state) for state, agent in zip(states, agents)]
 
             next_states, rewards, dones = [], [], []
-            resources = []
             for i, action in enumerate(actions):
                 if not independent_state:
                     set_other_utilization(envs[i], other_envs[i])
@@ -371,14 +365,13 @@ if __name__ == '__main__':
                 next_states.append(np.array(observation).flatten())
                 rewards.append(reward)
                 dones.append(done)
-                resources.append(envs[i].ALLOCATED)
                 if done:
                     next_states[i] = None
 
-            #     if debug or t % (envs[i].MAX_STEPS // 2) == 0:
-            #         print(f"{envs[i].id}: ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
-            # if debug or t % envs[i].MAX_STEPS / 2 == 0:
-            #     print()
+                if debug:
+                    print(f"{envs[i].id}: ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
+            if debug:
+                print()
         
             [agents_ep_reward[i].append(rewards[i]) for i in range(n_agents)]
 
@@ -387,19 +380,19 @@ if __name__ == '__main__':
             next_states = [torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0) if observation is not None else None for observation in next_states]
             reward_tensors = [torch.tensor([reward], device=device) for reward in rewards]
 
-            for i in range(n_agents):
-                memories[i].push(states[i], actions[i], next_states[i], reward_tensors[i])
+            for agent in agents:
+                agent.memory.push(states[i], actions[i], next_states[i], reward_tensors[i])
 
             states = next_states
-            for i in range(n_agents):
-                optimize_model(agents[i], target_nets[i], memories[i], optimizers[i]) #, schedulers[i])
+            for agent in agents:
+                agent.update(BATCH_SIZE)
             
-            for agent, target_net in zip(agents, target_nets):
-                target_net_state_dict = target_net.state_dict()
-                policy_net_state_dict = agent.state_dict()
+            for agent in agents:
+                target_net_state_dict = agent.target_net.state_dict()
+                policy_net_state_dict = agent.policy_net.state_dict()
                 for key in policy_net_state_dict:
                     target_net_state_dict[key] = policy_net_state_dict[key]*TAU + target_net_state_dict[key]*(1-TAU)
-                target_net.load_state_dict(target_net_state_dict)
+                agent.target_net.load_state_dict(target_net_state_dict)
 
             if any(dones):
                 break
@@ -428,6 +421,6 @@ if __name__ == '__main__':
 
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):
-            torch.save(agent.state_dict(), f'{parent_dir}/{MODEL}/model_weights_agent_{i}.pth')
+            agent.save(f'{parent_dir}/{MODEL}', agent_id=i)
     
         save_training_data(f'{parent_dir}/{MODEL}', summed_rewards, mean_latencies, agents_summed_rewards, agents_mean_latenices=agents_mean_latenices)
