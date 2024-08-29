@@ -1,11 +1,10 @@
 import numpy as np
 import time
 import argparse
-import torch
 
 from train_ppo import PPO
 from train_ddpg import DDPGagent
-from train_mdqn import DQN, DuelingDQN
+from train_mdqn import DQNAgent
 from envs import ContinuousElasticityEnv, DiscreteElasticityEnv, InstantContinuousElasticityEnv, set_available_resource, set_other_priorities, set_other_utilization
 
 
@@ -42,9 +41,9 @@ def infer(n_agents=None, resources=None, independent=False, tl_agent=False, mode
         case 'ippo':
             agents = [PPO(env, has_continuous_action_space=not discrete, action_std_init=1e-10, sigmoid_output=instant) for env in envs]
         case 'mdqn' | 'dmdqn':
-            agents = [DQN(len(state) * len(state[0]), envs[0].action_space.n) for env in envs]
+            agents = [DQNAgent(env) for env in envs]
         case 'ddmdqn':
-            agents = [DuelingDQN(len(state) * len(state[0]), envs[0].action_space.n) for env in envs]
+            agents = [DQNAgent(env, dueling=True) for env in envs]
         case 'ddpg' | 'iddpg':
             agents = [DDPGagent(env, hidden_size=64, sigmoid_output=instant) for env in envs]
 
@@ -55,45 +54,24 @@ def infer(n_agents=None, resources=None, independent=False, tl_agent=False, mode
         return
 
     for id, agent in enumerate(agents):
-        if 'ppo' in algorithm:
-            if tl_agent:
-                agent.load(f'{model}/agent_{tl_agent}.pth')
-            else:
-                agent.load(f'{model}/agent_{id}.pth')
-        elif 'dqn' in algorithm:
-            if tl_agent:
-                agent.load_state_dict(torch.load(f'{model}/model_weights_agent_{tl_agent}.pth'))
-            else:
-                agent.load_state_dict(torch.load(f'{model}/model_weights_agent_{id}.pth'))
-        elif 'ddpg' in algorithm:
-            if tl_agent:
-                agent.load_model(f'{model}/agent_{tl_agent}_actor.pth', f'{model}/agent_{tl_agent}_critic.pth')
-            else:
-                agent.load_model(f'{model}/agent_{id}_actor.pth', f'{model}/agent_{id}_critic.pth')
+        if tl_agent:
+            agent.load(model, agent_id=tl_agent)
+        else:
+            agent.load(model, agent_id=id)
 
     for i, env in enumerate(envs):
         env.DEBUG = False
         env.MAX_CPU_LIMIT = resources
-        env.INCREMENT = 25
         env.priority = priorities[i]
-        env.scale_action = 100
+        # todo: remove this hardcoding
+        env.INCREMENT = 25
+        env.scale_action = 50
 
     set_available_resource(envs, resources)
     states = [np.array(env.reset()).flatten() for env in envs]
     while True:
         start_time = time.time()
-
-        if 'ppo' in algorithm:
-            actions = [agent.select_action(state) for state, agent in zip(states, agents)]
-        elif 'ddpg' in algorithm:
-            actions = [[agent.get_action(state)] for state, agent in zip(states, agents)]
-        elif 'dqn' in algorithm:
-            with torch.no_grad():
-                actions = [dqn(torch.tensor(state, dtype=torch.float32).unsqueeze(0)).max(1).indices.view(1, 1) for dqn, state in zip(agents, states)]
-        else:
-            print("Something went terribly wrong")
-            return
-        
+        actions = [agent.get_action(state) for state, agent in zip(states, agents)]
         states, rewards, dones, _ = [], [], [], []
         for i, action in enumerate(actions):
             set_other_utilization(envs[i], other_envs[i])

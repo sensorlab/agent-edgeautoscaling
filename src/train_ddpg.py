@@ -214,14 +214,21 @@ class DDPGagent():
         for target_param, param in zip(self.critic_target.parameters(), self.critic.parameters()):
             target_param.data.copy_(param.data * self.tau + target_param.data * (1.0 - self.tau))
     
-    def load_model(self, actor_path, critic_path):
-        self.actor.load_state_dict(torch.load(actor_path, map_location=lambda storage, loc: storage))
-        self.critic.load_state_dict(torch.load(critic_path, map_location=lambda storage, loc: storage))
+    def load(self, folder_path, agent_id):
+        self.actor.load_state_dict(torch.load(f"{folder_path}/agent_{agent_id}_actor.pth", map_location=lambda storage, loc: storage))
+        self.critic.load_state_dict(torch.load(f"{folder_path}/agent_{agent_id}_critic.pth", map_location=lambda storage, loc: storage))
     
-    def save_model(self, path):
+    def save(self, folder_path, agent_id=None):
+        torch.save(self.actor.state_dict(), f"{folder_path}/agent_{agent_id}_actor.pth")
+        torch.save(self.critic.state_dict(), f"{folder_path}/agent_{agent_id}_critic.pth")
+    
+    def save_checkpoint(self, path):
         torch.save(self.actor.state_dict(), path + "_actor.pth")
         torch.save(self.critic.state_dict(), path + "_critic.pth")
 
+    def load_checkpoint(self, path):
+        self.actor.load_state_dict(torch.load(path + "_actor.pth"))
+        self.critic.load_state_dict(torch.load(path + "_critic.pth"))
 
 def describe_env(env):
     print(f"Action Space: {env.action_space}")
@@ -240,7 +247,7 @@ if __name__ == "__main__":
     parser.add_argument('--interval', type=int, default=1000, help="Milliseconds interval for requests")
     parser.add_argument('--batch_size', type=int, default=64, help="Batch size for training")
     parser.add_argument('--scale_action', type=int, default=50, help="How much does the agent scale with an action")
-    parser.add_argument('--load_weights', type=str, default='', help="Load weights from previous training with a string of the model parent directory")
+    parser.add_argument('--load_weights', type=str, default=False, help="Load weights from previous training with a string of the model parent directory")
     parser.add_argument('--max_sigma', type=float, default=0.25, help="Max sigma for noise")
     parser.add_argument('--min_sigma', type=float, default=0.01, help="Min sigma for noise")
 
@@ -334,7 +341,7 @@ if __name__ == "__main__":
     if independent_state:
         MODEL += "_independent_state"
     if weights_dir:
-        [agent.load_model(f"{weights_dir}/agent_{i}_actor.pth", f"{weights_dir}/agent_{i}_critic.pth") for i, agent in enumerate(agents)]
+        [agent.load(weights_dir, agent_id=i) for i, agent in enumerate(agents)]
         print(f"Successfully loaded weights from {weights_dir}")
         MODEL += "_pretrained"
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
@@ -354,7 +361,7 @@ if __name__ == "__main__":
         # Checkpoint
         if episode % 50 == 0 and episode != 0 and make_checkpoints:
             for i, agent in enumerate(agents):
-                agent.save_model(f"{parent_dir}/{MODEL}/ep_{episode}_agent_{i}")
+                agent.save_checkpoint(f"{parent_dir}/{MODEL}/ep_{episode}_agent_{i}")
             print(f"Checkpoint saved at episode {episode} for {n_agents} agents")
 
         if variable_resources and episode % 5 == 0:
@@ -461,6 +468,6 @@ if __name__ == "__main__":
 
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):
-            agent.save_model(f"{parent_dir}/{MODEL}/agent_{i}")
+            agent.save(f"{parent_dir}/{MODEL}", agent_id=i)
         
         save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_rts, agents_summed_rewards, agent_mean_rts=agents_mean_rts)

@@ -159,6 +159,6 @@ if __name__ == '__main__':
                     
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):
-            agent.save_model(f"{parent_dir}/{MODEL}/agent_{i}")
+            agent.save(f"{parent_dir}/{MODEL}", agent_id=i)
         
         save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_latencies, agents_summed_rewards)

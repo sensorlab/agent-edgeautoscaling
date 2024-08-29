@@ -281,13 +281,20 @@ class PPO:
         self.buffer.clear()
 
     
-    def save(self, checkpoint_path):
-        torch.save(self.policy_old.state_dict(), checkpoint_path)
-   
+    def save(self, folder_path, agent_id=None):
+        torch.save(self.policy_old.state_dict(), f"{folder_path}/agent_{agent_id}.pth")
 
-    def load(self, checkpoint_path):
+    def save_checkpoint(self, checkpoint_path):
+        torch.save(self.policy_old.state_dict(), checkpoint_path)
+
+    def load_checkpoint(self, checkpoint_path):
         self.policy_old.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage))
         self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage))
+
+    def load(self, folder_path, agent_id=None):
+        self.policy_old.load_state_dict(torch.load(f"{folder_path}/agent_{agent_id}.pth", map_location=lambda storage, loc: storage))
+        self.policy.load_state_dict(torch.load(f"{folder_path}/agent_{agent_id}.pth", map_location=lambda storage, loc: storage))
+        print(f"Loaded model from {folder_path}/agent_{agent_id}.pth")
 
 
 if __name__ == "__main__":
@@ -422,8 +429,8 @@ if __name__ == "__main__":
     else:
         MODEL += f'_{RESOURCES}resources'
     if weights_dir:
-        [agent.load(f"{parent_dir}/{weights_dir}/agent_{i}.pth") for i, agent in enumerate(agents)]
-        print(f"Successfully loaded weights from {parent_dir}/{weights_dir}")
+        [agent.load(weights_dir, agent_id=i) for i, agent in enumerate(agents)]
+        print(f"Successfully loaded weights from {weights_dir}")
         MODEL += "_pretrained"
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
 
@@ -446,7 +453,7 @@ if __name__ == "__main__":
         # Checkpoint
         if episode % 50 == 0 and episode != 0 and make_checkpoints:
             for i, agent in enumerate(agents):
-                agent.save(f"{parent_dir}/{MODEL}/ep_{episode}_agent_{i}.pth")
+                agent.save_checkpoint(f"{parent_dir}/{MODEL}/ep_{episode}_agent_{i}.pth")
             print(f"Checkpoint saved at episode {episode} for {n_agents} agents")
 
         if variable_resources and episode % 5 == 0:
@@ -587,7 +594,7 @@ if __name__ == "__main__":
 
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):
-            agent.save(f"{parent_dir}/{MODEL}/agent_{i}.pth")
+            agent.save(f"{parent_dir}/{MODEL}", agent_id=i)
 
         save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_rts, agents_summed_rewards, agent_mean_rts=agents_mean_rts)
 

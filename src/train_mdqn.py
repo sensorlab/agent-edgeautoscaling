@@ -184,6 +184,14 @@ class DQNAgent:
         self.target_net.load_state_dict(self.policy_net.state_dict())
         print(f"Loaded weights for agent {agent_id}, located: {folder_path}")
 
+    def save_checkpoint(self, path):
+        torch.save(self.policy_net.state_dict(), path)
+
+    def load_checkpoint(self, path):
+        self.policy_net.load_state_dict(torch.load(path))
+        self.target_net.load_state_dict(self.policy_net.state_dict())
+        print(f"Loaded checkpoint located: {path}")
+
     def save(self, folder_path, agent_id=None):
         torch.save(self.policy_net.state_dict(), f"{folder_path}/model_weights_agent_{agent_id}.pth")
         print(f"Saved weights for agent {agent_id}, located: {folder_path}")
@@ -206,11 +214,11 @@ if __name__ == '__main__':
     parser.add_argument('--reward_function', type=int, default=2, help="Setting for the reward function")
 
     parser.add_argument('--variable_resources', type=bool, default=False, help="Random resources every 10 episodes")
+    parser.add_argument('--load_weights', type=str, default=False, help="Load weights from previous training with a string of the model parent directory")
 
     parser.add_argument('--random_rps', action='store_true', default=False, help="Train on random requests every episode")
     parser.add_argument('--dueling', action='store_true', default=False, help="Dueling rl")
     parser.add_argument('--double', action='store_true', default=False, help="Double rl")
-    parser.add_argument('--load_weights', action='store_true', default=False, help="Load weights from previous training")
     parser.add_argument('--independent_state', action='store_true', default=False, help="Dont use metrics from other pods (except for available resources)")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
     parser.add_argument('--reset_env', action='store_true', default=False, help="Resetting the env every 10th episode")
@@ -234,7 +242,7 @@ if __name__ == '__main__':
     MEMORY_SIZE = 1000
     EPISODES = args.episodes
 
-    LOAD_WEIGHTS = args.load_weights
+    weights_dir = args.load_weights
     SAVE_WEIGHTS = True
 
     # env values
@@ -248,7 +256,7 @@ if __name__ == '__main__':
     MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{rf}_rf_{reqs_per_second}rps{alpha}alpha'
     if not variable_resources:
         MODEL += f'{RESOURCES}res'
-    suffixes = ['_double' if double else '', '_dueling' if dueling else '', '_varres' if variable_resources else '', '_pretrained' if LOAD_WEIGHTS else '']
+    suffixes = ['_double' if double else '', '_dueling' if dueling else '', '_varres' if variable_resources else '', '_pretrained' if weights_dir else '']
     MODEL += ''.join(suffixes)
     if independent_state:
         MODEL += "_independent_state"
@@ -285,9 +293,9 @@ if __name__ == '__main__':
 
     agents = [DQNAgent(env, double=double, dueling=dueling, device=device, memory_size=MEMORY_SIZE) for env in envs]
     
-    if LOAD_WEIGHTS:
+    if weights_dir:
         for i, agent in enumerate(agents):
-            agent.load(f'src/model_metric_data/dqn/mdqn310ep1000m25inc2_rf_20rps5.0alpha1000res_double_dueling_pretrained?', agent_id=i)
+            agent.load(weights_dir, agent_id=i)
         print(f"Loaded weights for agents")
 
     steps_done = 0
@@ -302,7 +310,7 @@ if __name__ == '__main__':
     for i_episode in tqdm(range(EPISODES)):
         if i_episode % 50 == 0 and i_episode != 0 and SAVE_WEIGHTS:
             for i, agent in enumerate(agents):
-                agent.save(f'{parent_dir}/{MODEL}/ep_{i_episode}_agent_{i}.pth')
+                agent.save_checkpoint(f'{parent_dir}/{MODEL}/ep_{i_episode}_agent_{i}.pth')
                 print(f"Checkpoint: Saved weights for agent {i}")
         if variable_resources and i_episode % 5 == 0:
             RESOURCES = random.choice([500, 750, 1000, 1250, 1500, 1750, 2000])
