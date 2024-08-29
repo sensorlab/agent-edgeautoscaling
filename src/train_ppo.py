@@ -1,8 +1,3 @@
-from envs import ContinuousElasticityEnv, DiscreteElasticityEnv, InstantContinuousElasticityEnv
-from spam_cluster import get_response_times
-from pod_controller import set_container_cpu_values, get_loadbalancer_external_port
-from utils import save_training_data
-
 import os
 import subprocess
 import time
@@ -17,6 +12,11 @@ import torch
 import torch.nn as nn
 import torch.autograd
 from torch.distributions import Categorical, MultivariateNormal
+
+from envs import ContinuousElasticityEnv, DiscreteElasticityEnv, InstantContinuousElasticityEnv, set_available_resource, set_other_priorities, set_other_utilization
+from spam_cluster import get_response_times
+from pod_controller import set_container_cpu_values, get_loadbalancer_external_port
+from utils import save_training_data
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -289,19 +289,6 @@ class PPO:
         self.policy_old.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage))
         self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage))
 
-
-def set_available_resource(envs, initial_resources):
-    max_group = initial_resources
-    for env in envs:
-        max_group -= env.ALLOCATED
-    for env in envs:
-        env.AVAILABLE = max_group
-
-def set_other_utilization(env, other_envs):
-    env.other_util = np.mean([o_env.last_cpu_percentage for o_env in other_envs])
-
-def set_other_priorities(env, other_envs):
-    env.other_priorities = np.mean([o_env.priority for o_env in other_envs])
 
 # TODO: Change variables named latency with response time
 if __name__ == "__main__":

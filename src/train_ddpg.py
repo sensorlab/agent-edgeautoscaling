@@ -1,5 +1,4 @@
-from envs import ContinuousElasticityEnv, InstantContinuousElasticityEnv
-from train_ppo import set_other_priorities, set_other_utilization
+from envs import ContinuousElasticityEnv, InstantContinuousElasticityEnv, set_other_utilization, set_other_priorities, set_available_resource
 from spam_cluster import get_response_times
 from pod_controller import set_container_cpu_values, get_loadbalancer_external_port
 from utils import save_training_data
@@ -230,14 +229,6 @@ def describe_env(env):
     print(f"Max Episode Steps: {env.MAX_STEPS}")
 
 
-def set_available_resource(envs, initial_resources):
-    max_group = initial_resources
-    for env in envs:
-        max_group -= env.ALLOCATED
-    for env in envs:
-        env.AVAILABLE = max_group
-
-
 # TODO: Change variables named latency with response time
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -440,10 +431,10 @@ if __name__ == "__main__":
                 if len(agents[i].memory) > bs:
                     agents[i].update(bs)
                 agents_step_rewards.append(reward)
-            #     if debug or step % (envs[i].MAX_STEPS // 2) == 0:
-            #         print(f"{envs[i].id}: ACTION: {actions[i]}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
-            # if debug:
-            #     print()
+                if debug:
+                    print(f"{envs[i].id}: ACTION: {actions[i]}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
+            if debug:
+                print()
 
             states = new_states
             

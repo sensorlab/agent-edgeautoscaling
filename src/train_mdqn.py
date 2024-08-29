@@ -15,13 +15,10 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 
-from envs import DiscreteElasticityEnv
-import pandas as pd
-
+from envs import DiscreteElasticityEnv, set_available_resource, set_other_priorities, set_other_utilization
 from spam_cluster import get_response_times
 from pod_controller import set_container_cpu_values, get_loadbalancer_external_port
 from utils import save_training_data
-from train_ppo import set_other_priorities, set_other_utilization
 
 
 class ReplayMemory(object):
@@ -159,13 +156,6 @@ def select_action(state, policy_net, env):
     else:
         return torch.tensor([[env.action_space.sample()]], device=device, dtype=torch.long)
 
-
-def set_available_resource(envs, initial_resources):
-    max_group = initial_resources
-    for env in envs:
-        max_group -= env.ALLOCATED
-    for env in envs:
-        env.AVAILABLE = max_group
 
 # TODO: Change variables named latency with response time
 if __name__ == '__main__':

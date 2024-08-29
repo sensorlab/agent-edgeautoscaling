@@ -3,10 +3,10 @@ import time
 import argparse
 import torch
 
-from train_ppo import PPO, set_available_resource, set_other_priorities, set_other_utilization
+from train_ppo import PPO
 from train_ddpg import DDPGagent
 from train_mdqn import DQN, DuelingDQN
-from envs import ContinuousElasticityEnv, DiscreteElasticityEnv, InstantContinuousElasticityEnv
+from envs import ContinuousElasticityEnv, DiscreteElasticityEnv, InstantContinuousElasticityEnv, set_available_resource, set_other_priorities, set_other_utilization
 
 
 def infer(n_agents=None, resources=None, independent=False, tl_agent=False, model=None, debug=False, action_interval=None, priorities=None, algorithm=None):

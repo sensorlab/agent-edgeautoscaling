@@ -256,3 +256,19 @@ class InstantContinuousElasticityEnv(BaseElasticityEnv):
         self.steps += 1
         done = self.steps >= self.MAX_STEPS
         return self.state, reward, done, 0
+
+
+def set_available_resource(envs, initial_resources):
+    max_group = initial_resources
+    for env in envs:
+        max_group -= env.ALLOCATED
+    for env in envs:
+        env.AVAILABLE = max_group
+
+
+def set_other_utilization(env, other_envs):
+    env.other_util = np.mean([o_env.last_cpu_percentage for o_env in other_envs])
+
+
+def set_other_priorities(env, other_envs):
+    env.other_priorities = np.mean([o_env.priority for o_env in other_envs])
