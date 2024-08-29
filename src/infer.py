@@ -8,7 +8,7 @@ from train_mdqn import DQNAgent
 from envs import ContinuousElasticityEnv, DiscreteElasticityEnv, InstantContinuousElasticityEnv, set_available_resource, set_other_priorities, set_other_utilization
 
 
-def infer(n_agents=None, resources=None, independent=False, tl_agent=False, model=None, debug=False, action_interval=None, priorities=None, algorithm=None):
+def infer(n_agents=None, resources=None, independent=False, tl_agent=None, model=None, debug=False, action_interval=None, priorities=None, algorithm=None):
     instant, discrete = False, False
 
     match algorithm:
@@ -33,8 +33,6 @@ def infer(n_agents=None, resources=None, independent=False, tl_agent=False, mode
         else:
             envs = [ContinuousElasticityEnv(i, independent_state=independent) for i in range(1, n_agents + 1)]
 
-    state = envs[0].reset()
-
     match algorithm:
         case 'ppo' | 'dppo':
             agents = [PPO(env, has_continuous_action_space=not discrete, action_std_init=1e-10, sigmoid_output=instant) for env in envs]
@@ -54,7 +52,7 @@ def infer(n_agents=None, resources=None, independent=False, tl_agent=False, mode
         return
 
     for id, agent in enumerate(agents):
-        if tl_agent:
+        if type(tl_agent) == int:
             agent.load(model, agent_id=tl_agent)
         else:
             agent.load(model, agent_id=id)
