@@ -229,18 +229,16 @@ def describe_env(env):
     print(f"Max Episode Steps: {env.MAX_STEPS}")
 
 
-# TODO: Change variables named latency with response time
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--episodes', type=int, default=300)
     parser.add_argument('--init_resources', type=int, default=1000, help="Cpu resoruces given to the cluster")
-    parser.add_argument('--alpha', type=float, default=0.75, help="Weight for the shared reward, higher the more weight to latency, lower the more weight to efficiency")
+    parser.add_argument('--alpha', type=float, default=0.75, help="Weight for the shared reward, higher the more weight to response time, lower the more weight to efficiency")
     parser.add_argument('--n_agents', type=int, default=3)
     parser.add_argument('--rps', type=int, default=50, help="Baseline bound of requests per second for loading cluster, if random, it is the upper bound")
     parser.add_argument('--min_rps', type=int, default=10, help="Minimum Requests per second for loading cluster, if the random requests are enabled")
     parser.add_argument('--interval', type=int, default=1000, help="Milliseconds interval for requests")
     parser.add_argument('--batch_size', type=int, default=64, help="Batch size for training")
-    parser.add_argument('--gamma_latency', type=float, default=0.5, help="Latency normalization")
     parser.add_argument('--scale_action', type=int, default=50, help="How much does the agent scale with an action")
     parser.add_argument('--load_weights', type=str, default='', help="Load weights from previous training with a string of the model parent directory")
     parser.add_argument('--max_sigma', type=float, default=0.25, help="Max sigma for noise")
@@ -271,7 +269,6 @@ if __name__ == "__main__":
     n_agents = args.n_agents
     bs = args.batch_size
     debug = args.debug
-    gamma_latency = args.gamma_latency
     scale_action = args.scale_action
     min_rps = args.min_rps
     make_checkpoints = args.make_checkpoints
@@ -346,9 +343,9 @@ if __name__ == "__main__":
 
     rewards = []
     avg_rewards = []
-    mean_latencies = []
+    mean_rts = []
     agents_summed_rewards = [[] for _ in range(n_agents)]
-    agents_mean_latenices = [[] for _ in range(n_agents)]
+    agents_mean_rts = [[] for _ in range(n_agents)]
 
     set_container_cpu_values(100)
     set_available_resource(envs, RESOURCES)
@@ -386,24 +383,23 @@ if __name__ == "__main__":
 
         [noise.reset() for noise in noises]
 
-        ep_latencies = []
+        ep_rts = []
         ep_rewards = []
         agents_ep_reward = [[] for _ in range(n_agents)]
-        agents_ep_mean_latency = [[] for _ in range(n_agents)]
+        agents_ep_mean_rt = [[] for _ in range(n_agents)]
 
         for step in range(envs[0].MAX_STEPS):
             time.sleep(1)
             agents_step_rewards = []
 
-            latencies = [np.mean([latency if latency is not None else 2 for latency in get_response_times(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
-            # latencies = [np.mean([latency for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict') if latency is not None]) for env in envs]
-            for i, latency in enumerate(latencies):
-                agents_ep_mean_latency[i].append(latency)
-            latency = np.mean(latencies) # Avg latency of all pods
-            ep_latencies.append(latency)
+            rts = [np.mean([rt if rt is not None else 2 for rt in get_response_times(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
+            for i, rt in enumerate(rts):
+                agents_ep_mean_rt[i].append(rt)
+            rt = np.mean(rts) # Avg response time of all pods
+            ep_rts.append(rt)
 
-            priority_weighted_latency = sum((1 + env.priority) * latency for env, latency in zip(envs, latencies))
-            shared_reward = 1 - ALPHA_CONSTANT * (priority_weighted_latency - 0.01)
+            priority_weighted_rt = sum((1 + env.priority) * rt for env, rt in zip(envs, rts))
+            shared_reward = 1 - ALPHA_CONSTANT * (priority_weighted_rt - 0.01)
 
             actions, new_states, dones = [], [], []
             for i, agent in enumerate(agents):
@@ -443,10 +439,10 @@ if __name__ == "__main__":
             if any(dones):
                 break
         
-        mean_latencies.append(np.mean(ep_latencies))
+        mean_rts.append(np.mean(ep_rts))
         rewards.append(sum(ep_rewards))
         [agents_summed_rewards[i].append(np.sum(reward)) for i, reward in enumerate(agents_ep_reward)]
-        [agents_mean_latenices[i].append(np.mean(latency)) for i, latency in enumerate(agents_ep_mean_latency)]
+        [agents_mean_rts[i].append(np.mean(rt)) for i, rt in enumerate(agents_ep_mean_rt)]
 
         spam_process.terminate()
         set_container_cpu_values(1000)
@@ -461,10 +457,10 @@ if __name__ == "__main__":
         for env in envs:
             env.set_last_limit()
         
-        print(f"Episode {episode} reward: {rewards[-1]} mean latency: {np.mean(ep_latencies)}")
+        print(f"Episode {episode} reward: {rewards[-1]} mean response time: {np.mean(ep_rts)}")
 
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):
             agent.save_model(f"{parent_dir}/{MODEL}/agent_{i}")
         
-        save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_latencies, agents_summed_rewards, agents_mean_latenices=agents_mean_latenices)
+        save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_rts, agents_summed_rewards, agent_mean_rts=agents_mean_rts)

@@ -189,7 +189,6 @@ class DQNAgent:
         print(f"Saved weights for agent {agent_id}, located: {folder_path}")
 
 
-# TODO: Change variables named latency with response time
 if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     BATCH_SIZE = 128
@@ -199,7 +198,7 @@ if __name__ == '__main__':
     parser.add_argument('--episodes', type=int, default=300)
     parser.add_argument('--init_resources', type=int, default=500)
     parser.add_argument('--increment_action', type=int, default=25)
-    parser.add_argument('--alpha', type=float, default=5.0, help="Weight for the shared reward, higher the more weight to latency, lower the more weight to efficiency")
+    parser.add_argument('--alpha', type=float, default=5.0, help="Weight for the shared reward, higher the more weight to response time, lower the more weight to efficiency")
     parser.add_argument('--n_agents', type=int, default=3)
     parser.add_argument('--rps', type=int, default=50, help="Requests per second for loading cluster")
     parser.add_argument('--interval', type=int, default=1000, help="Milliseconds interval for requests")
@@ -293,9 +292,9 @@ if __name__ == '__main__':
 
     steps_done = 0
     summed_rewards = []
-    mean_latencies = []
+    mean_rts = []
     agents_summed_rewards = [[] for _ in range(n_agents)]
-    agents_mean_latenices = [[] for _ in range(n_agents)]
+    agents_mean_rts = [[] for _ in range(n_agents)]
     
     url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}"
     # url = f"http://localhost:30888/predict"
@@ -331,23 +330,23 @@ if __name__ == '__main__':
         states = [torch.tensor(np.array(state).flatten(), dtype=torch.float32, device=device).unsqueeze(0) for state in states]
 
         ep_rewards = 0
-        ep_latencies = []
+        ep_rts = []
         agents_ep_reward = [[] for _ in range(n_agents)]
         ep_std = []
-        agents_ep_mean_latency = [[] for _ in range(n_agents)]
+        agent_ep_mean_rt = [[] for _ in range(n_agents)]
 
         for t in count():
             time.sleep(1)
             
-            latencies = [np.mean([latency if latency is not None else 2 for latency in get_response_times(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
-            for i, latency in enumerate(latencies):
-                agents_ep_mean_latency[i].append(latency)
+            rts = [np.mean([rt if rt is not None else 2 for rt in get_response_times(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
+            for i, rt in enumerate(rts):
+                agent_ep_mean_rt[i].append(rt)
 
-            latency = np.mean(latencies) # Avg latency of all pods
-            ep_latencies.append(latency)
+            rt = np.mean(rts) # Avg renspose time of all pods
+            ep_rts.append(rt)
 
-            priority_weighted_latency = sum((1 + env.priority) * latency for env, latency in zip(envs, latencies))
-            shared_reward = 1 - alpha * (priority_weighted_latency - 0.01)
+            priority_weighted_rt = sum((1 + env.priority) * rt for env, rt in zip(envs, rts))
+            shared_reward = 1 - alpha * (priority_weighted_rt - 0.01)
 
             actions = [agent.select_action(state) for state, agent in zip(states, agents)]
 
@@ -397,12 +396,12 @@ if __name__ == '__main__':
             if any(dones):
                 break
         
-        mean_latencies.append(np.mean(ep_latencies))
+        mean_rts.append(np.mean(ep_rts))
         summed_rewards.append(ep_rewards)
         
         [agents_summed_rewards[i].append(np.sum(reward)) for i, reward in enumerate(agents_ep_reward)]
-        [agents_mean_latenices[i].append(np.mean(latency)) for i, latency in enumerate(agents_ep_mean_latency)]
-        print(f"Episode {i_episode} reward: {ep_rewards} mean latency: {np.mean(ep_latencies)}")
+        [agents_mean_rts[i].append(np.mean(rt)) for i, rt in enumerate(agent_ep_mean_rt)]
+        print(f"Episode {i_episode} reward: {ep_rewards} mean response time: {np.mean(ep_rts)}")
 
         spam_process.terminate()
         set_container_cpu_values(1000)
@@ -417,10 +416,10 @@ if __name__ == '__main__':
         for env in envs:
             env.set_last_limit()
 
-    print(f'Completed {EPISODES} episodes with {np.mean(summed_rewards)} rewards and {np.mean(mean_latencies)} mean latencies.')
+    print(f'Completed {EPISODES} episodes with {np.mean(summed_rewards)} rewards and {np.mean(mean_rts)} mean response times.')
 
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):
             agent.save(f'{parent_dir}/{MODEL}', agent_id=i)
     
-        save_training_data(f'{parent_dir}/{MODEL}', summed_rewards, mean_latencies, agents_summed_rewards, agents_mean_latenices=agents_mean_latenices)
+        save_training_data(f'{parent_dir}/{MODEL}', summed_rewards, mean_rts, agents_summed_rewards, agent_mean_rts=agents_mean_rts)

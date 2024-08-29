@@ -217,7 +217,7 @@ class PPO:
             return action.item()
 
 
-    def select_inference_action(self, state):
+    def get_action(self, state):
         with torch.no_grad():
             state = torch.FloatTensor(state).to(device)
             if self.has_continuous_action_space:
@@ -290,7 +290,6 @@ class PPO:
         self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage))
 
 
-# TODO: Change variables named latency with response time
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--episodes', type=int, default=300)
@@ -302,11 +301,10 @@ if __name__ == "__main__":
     parser.add_argument('--rps', type=int, default=50, help="Baseline bound of requests per second for loading cluster, if random, it is the upper bound")
     parser.add_argument('--min_rps', type=int, default=10, help="Minimum Requests per second for loading cluster, if the random requests are enabled")
     parser.add_argument('--interval', type=int, default=1000, help="Milliseconds interval for requests")
-    parser.add_argument('--gamma_latency', type=float, default=0.5, help="Latency normalization")
     parser.add_argument('--scale_action', type=int, default=50, help="How much does the agent scale with an action")
     parser.add_argument('--load_weights', type=str, default=False, help="Load weights from previous training with a string of the model parent directory")
     parser.add_argument('--k_epochs', type=int, default=10, help="K-epochs for ppo training")
-    parser.add_argument('--reward_function', type=int, default=1, help="Options: 1, 2, 3, 4, 5...")
+    parser.add_argument('--reward_function', type=int, default=2, help="Options: 1, 2, 3, 4, 5...")
     parser.add_argument('--priority', type=int, default=0, help="Options: 0, 1, 2... 0 means to train priority")
 
     parser.add_argument('--independent_state', action='store_true', default=False, help="Dont use metrics from other pods (except for available resources)")
@@ -331,7 +329,6 @@ if __name__ == "__main__":
     reqs_per_second = args.rps
     n_agents = args.n_agents
     debug = args.debug
-    gamma_latency = args.gamma_latency
     scale_action = args.scale_action
     min_rps = args.min_rps
     make_checkpoints = args.make_checkpoints
@@ -346,7 +343,7 @@ if __name__ == "__main__":
     update_every = args.update_every
 
     url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}"
-    # USERS = 1 # Maybe change it later on to get "truer" latenies, but 1 is set for faster training
+    # Maybe change it later on to get "truer" response times, but 1 is set for faster training
     USERS = 1
 
     if discrete:
@@ -419,8 +416,6 @@ if __name__ == "__main__":
         MODEL += f"{scale_action}scale_a"
     if not reset_env:
         MODEL += '_NOreseting'
-    if reward_function == 42:
-        MODEL += f'{gamma_latency}gl'
     # No need to specify resources if they are variable
     if variable_resources:
         MODEL += '_vari_res'
@@ -436,16 +431,16 @@ if __name__ == "__main__":
 
     rewards = []
     avg_rewards = []
-    mean_latencies = []
+    mean_rts = []
     agents_summed_rewards = [[] for _ in range(n_agents)]
-    agents_mean_latenices = [[] for _ in range(n_agents)]
+    agents_mean_rts = [[] for _ in range(n_agents)]
 
     set_container_cpu_values(100)
     set_available_resource(envs, RESOURCES)
 
     utilization_all_step_rewards = [[] for _ in range(n_agents)]
-    all_steps_latencies_rewards = []
-    all_steps_latencies = []
+    all_steps_rts_rewards = []
+    all_steps_rts = []
 
     for episode in tqdm(range(episodes)):
         # Checkpoint
@@ -485,55 +480,42 @@ if __name__ == "__main__":
         states = [np.array(env.reset()).flatten() for env in envs]
         set_available_resource(envs, RESOURCES)
 
-        ep_latencies = []
+        ep_rts = []
         ep_rewards = []
         agents_ep_reward = [[] for _ in range(n_agents)]
-        agents_ep_mean_latency = [[] for _ in range(n_agents)]
+        agents_ep_mean_rt = [[] for _ in range(n_agents)]
 
         for step in range(envs[0].MAX_STEPS):
             time.sleep(1)
             time_step += 1
             agents_step_rewards = []
 
-            # latencies = get_reponse_latencies(USERS, url)
-            # latency = np.mean([latency for latency in latencies if latency is not None])
-
-            # Separate avg latecy for every pod/env/agent/container in the cluster
-            # latencies = [np.mean([latency for latency in get_response_latenices(USERS, f'{url}/api{env.id}/predict') if latency is not None]) for env in envs]
             # Give it 2, to avoid mean of None type
-            latencies = [np.mean([latency if latency is not None else 2 for latency in get_response_times(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
+            rts = [np.mean([rt if rt is not None else 2 for rt in get_response_times(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
 
-            for i, latency in enumerate(latencies):
-                agents_ep_mean_latency[i].append(latency)
+            for i, rt in enumerate(rts):
+                agents_ep_mean_rt[i].append(rt)
 
-            latency = np.mean(latencies) # Avg latency of all pods
-            # print(f"Step {step} avg latency: {latency:.2f} of {latencies}")
+            rt = np.mean(rts) # Avg reponse time of all pods
 
-            all_steps_latencies.append(latency)
-            ep_latencies.append(latency)
+            all_steps_rts.append(rt)
+            ep_rts.append(rt)
 
             match reward_function:
                 case 1 | 2:
-                #     shared_reward = - latency * 10
-                # case 2:
-                    # shared_reward = (1 - 10 * (latency - 0.01))
-
-                    priority_weighted_latency = sum((1 + env.priority) * latency for env, latency in zip(envs, latencies))
-                    shared_reward = 1 - ALPHA_CONSTANT * (priority_weighted_latency - 0.01)
+                    priority_weighted_rt = sum((1 + env.priority) * rt for env, rt in zip(envs, rts))
+                    shared_reward = 1 - ALPHA_CONSTANT * (priority_weighted_rt - 0.01)
                 case 3:
-                    shared_reward = (1 - 10 * latency)
+                    shared_reward = (1 - 10 * rt)
                 case 4:
-                    shared_reward = (- latency * 10)
+                    shared_reward = (- rt * 10)
                 case 5:
-                    shared_reward = (1 - 10 * latency)
-                case 42:
-                    latency = min(latency, gamma_latency)
-                    shared_reward = (gamma_latency - latency) / gamma_latency
+                    shared_reward = (1 - 10 * rt)
                 case _:
                     print("No implemented reward function")
                     break
 
-            all_steps_latencies_rewards.append(shared_reward)
+            all_steps_rts_rewards.append(shared_reward)
 
             actions, new_states, dones = [], [], []
             for i, agent in enumerate(agents):
@@ -583,10 +565,10 @@ if __name__ == "__main__":
             if any(dones):
                 break
         
-        mean_latencies.append(np.mean(ep_latencies))
+        mean_rts.append(np.mean(ep_rts))
         rewards.append(sum(ep_rewards))
         [agents_summed_rewards[i].append(np.sum(reward)) for i, reward in enumerate(agents_ep_reward)]
-        [agents_mean_latenices[i].append(np.mean(latency)) for i, latency in enumerate(agents_ep_mean_latency)]
+        [agents_mean_rts[i].append(np.mean(rt)) for i, rt in enumerate(agents_ep_mean_rt)]
 
         spam_process.terminate()
         set_container_cpu_values(1000)
@@ -601,22 +583,22 @@ if __name__ == "__main__":
         for env in envs:
             env.set_last_limit()
         
-        print(f"Episode {episode} reward: {rewards[-1]} mean latency: {np.mean(ep_latencies)}")
+        print(f"Episode {episode} reward: {rewards[-1]} mean response time: {np.mean(ep_rts)}")
 
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):
             agent.save(f"{parent_dir}/{MODEL}/agent_{i}.pth")
 
-        save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_latencies, agents_summed_rewards, agents_mean_latenices=agents_mean_latenices)
+        save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_rts, agents_summed_rewards, agent_mean_rts=agents_mean_rts)
 
         for agent_idx, rewards in enumerate(utilization_all_step_rewards):
             filename = f'{parent_dir}/{MODEL}/agent_{agent_idx}_step_util_rewards.csv'
             agent_rewards_df = pd.DataFrame({'Step': range(len(rewards)), 'Reward': rewards})
             agent_rewards_df.to_csv(filename, index=False)
 
-        step_latency_reward_df = pd.DataFrame({'Step': range(len(all_steps_latencies_rewards)), 'Shared reward': all_steps_latencies_rewards})
-        step_latency_reward_df.to_csv(f'{parent_dir}/{MODEL}/step_latency_shared_reward.csv', index=False)
+        step_rt_reward_df = pd.DataFrame({'Step': range(len(all_steps_rts_rewards)), 'Shared reward': all_steps_rts_rewards})
+        step_rt_reward_df.to_csv(f'{parent_dir}/{MODEL}/step_latency_shared_reward.csv', index=False)
 
-        step_latenices_df = pd.DataFrame({'Step': range(len(all_steps_latencies)), 'Latency': all_steps_latencies})
-        step_latenices_df.to_csv(f'{parent_dir}/{MODEL}/step_latencies.csv', index=False)
+        step_rt_df = pd.DataFrame({'Step': range(len(all_steps_rts)), 'Latency': all_steps_rts})
+        step_rt_df.to_csv(f'{parent_dir}/{MODEL}/step_latencies.csv', index=False)
     

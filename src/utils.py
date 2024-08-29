@@ -72,11 +72,11 @@ def calculate_dynamic_rps(episode, reqs_per_second, min_rps, max_limit_rps=100, 
     random_rps = np.random.randint(min_rps, dynamic_max_rps) if randomize_reqs else reqs_per_second
     return dynamic_max_rps, random_rps
 
-def save_training_data(path, rewards, mean_latencies, agents_summed_rewards, resource_dev=None, agents_mean_latenices=None):
+def save_training_data(path, rewards, mean_rts, agents_summed_rewards, resource_dev=None, agent_mean_rts=None):
     ep_summed_rewards_df = pd.DataFrame({'Episode': range(len(rewards)), 'Reward': rewards})
     ep_summed_rewards_df.to_csv(f'{path}/ep_summed_rewards.csv', index=False)
 
-    ep_latencies_df = pd.DataFrame({'Episode': range(len(mean_latencies)), 'Mean Latency': mean_latencies})
+    ep_latencies_df = pd.DataFrame({'Episode': range(len(mean_rts)), 'Mean Latency': mean_rts})
     ep_latencies_df.to_csv(f'{path}/ep_latencies.csv', index=False)
 
     for agent_idx, rewards in enumerate(agents_summed_rewards):
@@ -88,8 +88,8 @@ def save_training_data(path, rewards, mean_latencies, agents_summed_rewards, res
         resource_dev_df = pd.DataFrame({'Episode': range(len(resource_dev)), 'Resource Deviation': resource_dev})
         resource_dev_df.to_csv(f'{path}/resource_dev.csv', index=False)
     
-    if agents_mean_latenices:
-        for agent_idx, latencies in enumerate(agents_mean_latenices):
+    if agent_mean_rts:
+        for agent_idx, latencies in enumerate(agent_mean_rts):
             filename = f'{path}/agent_{agent_idx}_ep_mean_latencies.csv'
             agent_latenices_df = pd.DataFrame({'Episode': range(len(latencies)), 'Latency': latencies})
             agent_latenices_df.to_csv(filename, index=False)
