@@ -1,5 +1,7 @@
 # Resouce Elasticity NANCY
 
+In this project, the scaling approach involves deploying an agent per pod, which is a vertical scaling strategy. This method is particularly well-suited for stateful applications. The system is highly scalable because we can add an agent for every pod, and the interval of scaling can be as low as 1 second, allowing for rapid adjustments to resource demands.
+
 ## File Structure
 
 Scripts are meant to run from the project root folder.
