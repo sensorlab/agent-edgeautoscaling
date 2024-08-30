@@ -8,7 +8,7 @@ from train_mdqn import DQNAgent
 from envs import ContinuousElasticityEnv, DiscreteElasticityEnv, InstantContinuousElasticityEnv, set_available_resource, set_other_priorities, set_other_utilization
 
 
-def infer(n_agents=None, resources=None, independent=False, tl_agent=None, model=None, debug=False, action_interval=None, priorities=None, algorithm=None):
+def initalize_agents(n_agents=3, resources=1000, tl_agent=None, model=None, algorithm='ppo', independent=False, priorities=None):
     instant, discrete = False, False
 
     match algorithm:
@@ -43,8 +43,6 @@ def infer(n_agents=None, resources=None, independent=False, tl_agent=None, model
         case 'ddpg' | 'iddpg':
             agents = [DDPGagent(env, hidden_size=64, sigmoid_output=instant) for env in envs]
 
-    other_envs = [[env for env in envs if env != envs[i]] for i in range(len(envs))]  # For every env its other envs (pre-computing)
-
     if not model:
         print("Please provide a model to load")
         return
@@ -60,6 +58,13 @@ def infer(n_agents=None, resources=None, independent=False, tl_agent=None, model
         env.priority = priorities[i]
 
     set_available_resource(envs, resources)
+    
+    return envs, agents
+
+
+def infer(agents=None, envs=None, resources=None, debug=False, action_interval=None):
+    other_envs = [[env for env in envs if env != envs[i]] for i in range(len(envs))]
+
     states = [np.array(env.reset()).flatten() for env in envs]
     while True:
         start_time = time.time()
@@ -98,5 +103,7 @@ if __name__ == '__main__':
     # parser.add_argument('--independent', action='store_true', help='Independent')
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
+    
+    envs, agents = initalize_agents(n_agents=args.n_agents, algorithm=args.algorithm, tl_agent=args.hack, model=args.load_model, priorities=args.priorities, resources=args.resources)
 
-    infer(algorithm=args.algorithm, n_agents=args.n_agents, resources=args.resources, tl_agent=args.hack, model=args.load_model, debug=args.debug, action_interval=args.action_interval, priorities=args.priorities)
+    infer(agents=agents, envs=envs, resources=args.resources, debug=args.debug, action_interval=args.action_interval)
