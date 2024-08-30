@@ -16,8 +16,12 @@ microk8s kubectl label nodes e6-orancloud cluster=vm --overwrite
 log "Deploying cAdvisor for container monitoring"
 microk8s kubectl apply -f configs/cadvisor/config.yaml
 
-log "Installing NGINX Ingress Controller using Helm"
+log "Adding Helm repositories"
+microk8s helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+microk8s helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 microk8s helm repo update
+
+log "Installing NGINX Ingress Controller using Helm"
 microk8s helm install ingress-nginx ingress-nginx/ingress-nginx
 
 log "Creating a namespace for metrics"
