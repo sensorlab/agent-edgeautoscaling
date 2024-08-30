@@ -14,8 +14,6 @@ class BaseElasticityEnv(Env):
         self.app_label = f'app={self.container_name}'
         self.pod_name = f'{self.container_name}{id}'
 
-        self.DEBUG = False
-
         self.MAX_CPU_LIMIT = 1000
         self.MIN_CPU_LIMIT = 50
         self.INCREMENT = 50
@@ -36,6 +34,7 @@ class BaseElasticityEnv(Env):
                     self.container_id = container_id
                     self.node = node
                     break
+        print(f"Initialized Env {self.id} with {self.node}")
 
         self.other_util = 0.0
         self.STATE_LENTGH = 6
@@ -80,8 +79,6 @@ class BaseElasticityEnv(Env):
 
         self.states_fifo.append(state)
         self.states_fifo.pop(0)
-        if self.DEBUG:
-            print(f'Agent {self.id}, LIMIT: {cpu_limit}, AVAILABLE: {self.AVAILABLE}, state(limit, usage, others): {state}') 
         return self.states_fifo
     
     def reset(self):

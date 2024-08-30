@@ -58,7 +58,6 @@ def infer(n_agents=None, resources=None, independent=False, tl_agent=None, model
             agent.load(model, agent_id=id)
 
     for i, env in enumerate(envs):
-        env.DEBUG = False
         env.MAX_CPU_LIMIT = resources
         env.priority = priorities[i]
         # todo: remove this hardcoding

@@ -30,11 +30,8 @@ def init_nodes(debug=False, custom_label='type=ray'):
                         node_ip = pod.status.host_ip
                     nodes.append(Node(pod.spec.node_name, pod.status.pod_ip, node_ip))
 
-    print("Observable pods/nodes:")
     for node in nodes:
         node.update_containers(debug=debug, custom_label=custom_label)
-        print(f"{node.name}:{node.ip}, ca: {node.ca_ip}, pods: {list(node.get_containers().values())}")
-    print()
 
     return nodes
 

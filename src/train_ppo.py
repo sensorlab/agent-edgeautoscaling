@@ -385,7 +385,6 @@ if __name__ == "__main__":
 
     for i, env in enumerate(envs):
         env.MAX_CPU_LIMIT = RESOURCES
-        env.DEBUG = False
         env.priority = priorities[i]
         if not independent_state:
             set_other_utilization(env, other_envs[i])

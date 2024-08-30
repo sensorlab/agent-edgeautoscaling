@@ -43,7 +43,6 @@ if __name__ == '__main__':
     for env in envs:
         env.MAX_CPU_LIMIT = resources
         env.MIN_CPU_LIMIT = min_cpu
-        env.DEBUG = False
         env.scale_action = scale_action
     agents = [DDPGagent(env, hidden_size=64, max_memory_size=60000) for env in envs]
     parent_dir = 'src/model_metric_data/ddpg/pretrained'

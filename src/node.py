@@ -5,12 +5,40 @@ from kubernetes import client, config
 
 
 class Node:
+    """
+    A class to represent a Kubernetes node and manage its containers.
+
+    Attributes
+    ----------
+    name : str
+        The name of the node.
+    ip : str
+        The IP address of the node.
+    ca_ip : str
+        The IP address of the container advisor (cAdvisor).
+    containers : dict
+        A dictionary to store container information with container IDs as keys.
+
+    Methods
+    -------
+    __str__():
+        Returns a string representation of the Node object.
+    update_containers(debug=False, custom_label='app=localization'):
+        Updates the containers running on the node based on the specified label.
+    get_containers():
+        Returns the dictionary of containers.
+    get_container_usage(container_id):
+        Retrieves the CPU usage statistics for a specific container.
+    """
+
     def __init__(self, name, ca_ip, ip):
         self.name = name
         self.ip = ip
         self.ca_ip = ca_ip
         self.containers = dict()
-        self.last_pod_limits = dict()
+
+    def __str__(self):
+        return (f"Node(name={self.name}, ip={self.ip}, ca_ip={self.ca_ip}, containers={self.containers})")
 
     def update_containers(self, debug=False, custom_label='type=ray'):
         # self.containers = dict()

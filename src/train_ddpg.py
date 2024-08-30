@@ -299,7 +299,6 @@ if __name__ == "__main__":
     other_envs = [[env for env in envs if env != envs[i]] for i in range(len(envs))] # For every env its other envs (pre-computing), used for priority and utilization
     for i, env in enumerate(envs):
         env.MAX_CPU_LIMIT = RESOURCES
-        env.DEBUG = False
         env.scale_action = scale_action
         if not independent_state:
             set_other_utilization(env, other_envs[i])
