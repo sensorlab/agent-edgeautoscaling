@@ -58,9 +58,6 @@ def infer(n_agents=None, resources=None, independent=False, tl_agent=None, model
     for i, env in enumerate(envs):
         env.MAX_CPU_LIMIT = resources
         env.priority = priorities[i]
-        # todo: remove this hardcoding
-        env.INCREMENT = 25
-        env.scale_action = 50
 
     set_available_resource(envs, resources)
     states = [np.array(env.reset()).flatten() for env in envs]
