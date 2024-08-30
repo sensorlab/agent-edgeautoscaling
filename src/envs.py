@@ -2,7 +2,7 @@ import numpy as np
 
 from gymnasium import Env, spaces
 
-from utils import init_nodes
+from utils import init_nodes, load_config
 from pod_controller import patch_pod
 
 
@@ -10,20 +10,24 @@ class BaseElasticityEnv(Env):
     def __init__(self, id, independent_state=False):
         super().__init__()
         # Targets pod localization-api1 with container localization-api
-        self.container_name = 'localization-api'
-        self.app_label = f'app={self.container_name}'
+        config = load_config()
+        print(f"Loaded config: {config}")
+
+        self.container_name = config['target_container_name']
+        self.app_label = config['target_app_label']
         self.pod_name = f'{self.container_name}{id}'
 
-        self.MAX_CPU_LIMIT = 1000
-        self.MIN_CPU_LIMIT = 50
-        self.INCREMENT = 50
+        self.MAX_CPU_LIMIT = config['max_cpu'] # Dynamic, can change from outer scope
+        self.MIN_CPU_LIMIT = config['min_cpu']
+        self.INCREMENT = config['discrete_increment'] # Used for discrete action space
+        self.scale_action = config['scale_action'] # Used for continous action space
 
         self.ALLOCATED = 50
         self.AVAILABLE = 1000
 
         self.independent_state = independent_state
 
-        self.debug_deployment = True
+        self.debug_deployment = config['debug_deployment']
         nodes = init_nodes(debug=self.debug_deployment, custom_label=self.app_label)
 
         self.id = id
@@ -37,7 +41,7 @@ class BaseElasticityEnv(Env):
         print(f"Initialized Env {self.id} with {self.node}")
 
         self.other_util = 0.0
-        self.STATE_LENTGH = 6
+        self.STATE_LENTGH = config['state_history']
         if self.independent_state:
             self.states_fifo = [[0, 0, 0, 0, 0] for _ in range(self.STATE_LENTGH)]
         else:
@@ -52,14 +56,12 @@ class BaseElasticityEnv(Env):
         self.observation_space = spaces.Box(low=np.float32(0), high=np.float32(1), shape=(self.STATE_LENTGH * len(self.state[0]),))
 
         self.steps = 0
-        self.MAX_STEPS = 60
+        self.MAX_STEPS = config['max_steps']
 
         # 30% - 60%
-        self.UPPER_CPU = 60
-        self.LOWER_CPU = 30
+        self.UPPER_CPU = config['upper_cpu']
+        self.LOWER_CPU = config['lower_cpu']
         
-        self.dqn_reward = False
-
     def norm_cpu(self, cpu_usage):
         return cpu_usage / self.MAX_CPU_LIMIT
 
@@ -194,8 +196,6 @@ class ContinuousElasticityEnv(BaseElasticityEnv):
     def __init__(self, id, independent_state=False):
         super().__init__(id, independent_state=independent_state)
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
-        # self.action_space = spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
-        self.scale_action = 50
 
     def step(self, action, rf):
         self.state = self.get_current_usage()
@@ -230,7 +230,6 @@ class InstantContinuousElasticityEnv(BaseElasticityEnv):
     def __init__(self, id, independent_state=False):
         super().__init__(id, independent_state=independent_state)
         self.action_space = spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
-        self.scale_action = 50 # Placeholder
 
     def step(self, action, rf):
         self.state = self.get_current_usage()

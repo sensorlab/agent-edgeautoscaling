@@ -4,7 +4,7 @@ from utils import init_nodes, load_config
 
 if __name__ == '__main__':
     config = load_config()
-    nodes = init_nodes(debug=config.get('DEBUG'), custom_label=config.get('custom_app_label'))
+    nodes = init_nodes(debug=config['debug_deployment'], custom_label=config['target_app_label'])
     # nodes = init_nodes(debug=True, custom_label='app=localization-api')
 
     while True:

@@ -34,9 +34,7 @@ def infer(n_agents=None, resources=None, independent=False, tl_agent=None, model
             envs = [ContinuousElasticityEnv(i, independent_state=independent) for i in range(1, n_agents + 1)]
 
     match algorithm:
-        case 'ppo' | 'dppo':
-            agents = [PPO(env, has_continuous_action_space=not discrete, action_std_init=1e-10, sigmoid_output=instant) for env in envs]
-        case 'ippo':
+        case 'ppo' | 'dppo' | 'ippo':
             agents = [PPO(env, has_continuous_action_space=not discrete, action_std_init=1e-10, sigmoid_output=instant) for env in envs]
         case 'mdqn' | 'dmdqn':
             agents = [DQNAgent(env) for env in envs]

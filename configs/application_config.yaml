@@ -1,8 +1,0 @@
-DEBUG: true
-custom_app_label: "app=localization-api"
-scale_cpu: 25
-max_cpu: 1000
-min_cpu: 50
-UPPER: 60
-LOWER: 30
-action_interval: 5

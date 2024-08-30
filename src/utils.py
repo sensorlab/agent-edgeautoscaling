@@ -59,7 +59,7 @@ def increment_last_number(input_string):
         return input_string + '1'
 
 def load_config():
-    with open('configs/application_config.yaml', 'r') as f:
+    with open('configs/elasticity_config.yaml', 'r') as f:
         config = yaml.safe_load(f)
     return config
 
