@@ -1,7 +1,6 @@
 import os
 import subprocess
 import time
-import gymnasium as gym
 import random
 import numpy as np
 import pandas as pd

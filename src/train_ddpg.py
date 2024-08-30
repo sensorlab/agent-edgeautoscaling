@@ -9,7 +9,6 @@ import time
 import gymnasium as gym
 import random
 import numpy as np
-import pandas as pd
 from collections import deque
 from tqdm import tqdm
 import argparse
