@@ -9,7 +9,6 @@ from pod_controller import patch_pod
 class BaseElasticityEnv(Env):
     def __init__(self, id, independent_state=False):
         super().__init__()
-        # Targets pod localization-api1 with container localization-api
         config = load_config()
         print(f"Loaded config: {config}")
 
@@ -20,7 +19,7 @@ class BaseElasticityEnv(Env):
         self.MAX_CPU_LIMIT = config['max_cpu'] # Dynamic, can change from outer scope
         self.MIN_CPU_LIMIT = config['min_cpu']
         self.INCREMENT = config['discrete_increment'] # Used for discrete action space
-        self.scale_action = config['scale_action'] # Used for continous action space
+        self.scale_action = config['scale_action'] # Used for continuous action space
 
         self.ALLOCATED = 50
         self.AVAILABLE = 1000

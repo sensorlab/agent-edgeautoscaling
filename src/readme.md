@@ -1,4 +1,4 @@
-Uses the python client for kubernetes, to use
+Uses the python client for kubernetes, to use it, this command is necessary to load the correct credentials and cluster information for the master node.
 
 - k3s
 
