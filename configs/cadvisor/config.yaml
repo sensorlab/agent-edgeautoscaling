@@ -14,14 +14,21 @@ spec:
       labels:
         name: cadvisor
     spec:
-      nodeSelector:
-        kubernetes.io/arch: amd64
       tolerations:
       - key: node-role.kubernetes.io/master
         effect: NoSchedule
       containers:
       - name: cadvisor
-        image: gcr.io/cadvisor/cadvisor:v0.47.2
+        # limit it
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "100Mi"
+          limits:
+            cpu: "500m"
+            memory: "500Mi"
+        # multi-arch image
+        image: gcr.io/cadvisor/cadvisor:v0.49.1
         volumeMounts:
         - name: rootfs
           mountPath: /rootfs
@@ -32,16 +39,16 @@ spec:
         - name: sys
           mountPath: /sys
           readOnly: true
-        - name: docker
-          mountPath: /var/lib/docker
-          readOnly: true
         ports:
           - name: http
             containerPort: 8080
             protocol: TCP
         args:
-          - --profiling
+          # - --profiling
           - --housekeeping_interval=1s
+          - --log_dir=""
+          - --v=1
+          - --storage_duration=5s
       terminationGracePeriodSeconds: 30
       volumes:
       - name: rootfs
@@ -53,6 +60,3 @@ spec:
       - name: sys
         hostPath:
           path: /sys
-      - name: docker
-        hostPath:
-          path: /var/lib/docker

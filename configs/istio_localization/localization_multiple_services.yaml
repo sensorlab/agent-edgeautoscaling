@@ -1,0 +1,190 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: localization-api1
+  labels:
+    app: localization-api1
+spec:
+  nodeSelector:
+    kubernetes.io/arch: arm64
+    cluster: rasp1
+  containers:
+  - name: localization-api
+    image: wrathchild14/localization-reg:latest
+    resources:
+      limits:
+        cpu: "500m"
+        memory: 2Gi
+    ports:
+    - containerPort: 8000
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: localization-service1
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8088
+    targetPort: 8000
+  selector:
+    app: localization-api1
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: localization-api2
+  labels:
+    app: localization-api2
+spec:
+  nodeSelector:
+    kubernetes.io/arch: arm64
+    cluster: rasp2
+  containers:
+  - name: localization-api
+    image: wrathchild14/localization-reg:latest
+    resources:
+      limits:
+        cpu: "500m"
+        memory: 2Gi
+    ports:
+    - containerPort: 8000
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: localization-service2
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8088
+    targetPort: 8000
+  selector:
+    app: localization-api2
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: localization-api3
+  labels:
+    app: localization-api3
+spec:
+  nodeSelector:
+    kubernetes.io/arch: arm64
+    cluster: rasp1
+  containers:
+  - name: localization-api
+    image: wrathchild14/localization-reg:latest
+    resources:
+      limits:
+        cpu: "500m"
+        memory: 2Gi
+    ports:
+    - containerPort: 8000
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: localization-service3
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8088
+    targetPort: 8000
+  selector:
+    app: localization-api3
+
+---
+
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: localization-gateway
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"
+
+---
+
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: localization-virtual-service
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - localization-gateway
+  http:
+  - route:
+    - destination:
+        host: localization-service1.default.svc.cluster.local
+        port:
+          number: 8088
+      weight: 30
+    - destination:
+        host: localization-service2.default.svc.cluster.local
+        port:
+          number: 8088
+      weight: 60
+    - destination:
+        host: localization-service3.default.svc.cluster.local
+        port:
+          number: 8088
+      weight: 10
+
+---
+
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: localization-destination-rule1
+spec:
+  host: localization-service1.default.svc.cluster.local
+  subsets:
+  - name: subset1
+    labels:
+      app: localization-api1
+
+---
+
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: localization-destination-rule2
+spec:
+  host: localization-service2.default.svc.cluster.local
+  subsets:
+  - name: subset2
+    labels:
+      app: localization-api2
+
+---
+
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: localization-destination-rule3
+spec:
+  host: localization-service3.default.svc.cluster.local
+  subsets:
+  - name: subset3
+    labels:
+      app: localization-api3
