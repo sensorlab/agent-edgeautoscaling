@@ -3,3 +3,13 @@ scrape_configs:
     # scrape_interval: 120s
     static_configs:
       - targets: ['localhost:9090', 'cadvisor:8080', 'node-exporter:9100']
+
+grafana:
+  grafana.ini:
+    security:
+      allow_embedding: true
+    auth.anonymous:
+      enabled: true
+  service:
+    type: NodePort
+    nodePort: 32000
