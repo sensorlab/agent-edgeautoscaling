@@ -93,7 +93,7 @@ if __name__ == '__main__':
     parser.add_argument('--n_agents', type=int, default=3)
     parser.add_argument('--resources', type=int, default=1000)
     parser.add_argument('--load_model', type=str, default='trained/ppo/1000ep_rf_2_20rps10kepochs5alpha10epupdate50scale_a_1000resources') # Default trained weights for ppo model
-    parser.add_argument('--action_interval', type=int, default=5)
+    parser.add_argument('--action_interval', type=float, default=5.0)
     parser.add_argument('--priorities', type=float, nargs='+', default=[1.0, 1.0, 1.0], help='List of priorities (0.0 < value <= 1.0), default is 1.0 for all agents. Example: 1.0 1.0 1.0')
     
     parser.add_argument('--algorithm', type=str, default='ppo', help='Algorithm to use: ppo, ippo (instant ppo), dppo (discrete ppo), ddpg, iddpg (instant ddpg), mdqn, dmdqn, ddmdqn')

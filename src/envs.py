@@ -21,7 +21,7 @@ class BaseElasticityEnv(Env):
         self.INCREMENT = config['discrete_increment'] # Used for discrete action space
         self.scale_action = config['scale_action'] # Used for continuous action space
 
-        self.ALLOCATED = 50
+        # self.ALLOCATED = 50
         self.AVAILABLE = 1000
 
         self.independent_state = independent_state
@@ -38,6 +38,11 @@ class BaseElasticityEnv(Env):
                     self.node = node
                     break
         print(f"Initialized Env {self.id} with {self.node}")
+
+        # Initlized allocated resources of how much current does the pod have
+        (cpu_limit, cpu, cpu_percentage), (memory_limit, memory, memory_percentage), (rx, tx), throttled = self.node.get_container_usage(self.container_id)
+        self.ALLOCATED = cpu_limit
+
 
         self.other_util = 0.0
         self.STATE_LENTGH = config['state_history']

@@ -147,8 +147,7 @@ def create_pod_from(source_pod_name, node_name=None, debug=False):
         return None
 
 
-def patch_pod(pod_name, cpu_request="1", cpu_limit="1", memory_request=None, memory_limit=None,
-              container_name="ray-worker", debug=False, print_output=False):
+def patch_pod(pod_name, cpu_request="1", cpu_limit="1", memory_request=None, memory_limit=None, container_name="ray-worker", debug=False, print_output=False, namespace="default"):
     if debug:
         config.load_kube_config()
     else:
@@ -187,7 +186,7 @@ def patch_pod(pod_name, cpu_request="1", cpu_limit="1", memory_request=None, mem
     try:
         api_instance.patch_namespaced_pod(
             name=pod_name,
-            namespace="default",
+            namespace=namespace,
             body=patch,
         )
         if print_output:
