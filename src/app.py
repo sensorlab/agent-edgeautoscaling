@@ -15,7 +15,7 @@ class Application:
         self.envs = None
         self.agents = None
         self.resources = 1000
-        self.debug = True
+        self.debug = False
         self.action_interval = 1
         self.current_algorithm = None
         self.set_ppo()
@@ -100,10 +100,6 @@ class Application:
             return {"message": "PPO algorithm is already set"}
 
 
-# FIXME: This is a hack
-current_dir = os.getcwd()
-parent_dir = os.path.abspath(os.path.join(current_dir, os.pardir))
-os.chdir(parent_dir)
 
 app = Application()
 elasticity_app = FastAPI()
