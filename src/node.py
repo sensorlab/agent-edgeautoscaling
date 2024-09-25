@@ -1,6 +1,6 @@
-import requests
-
 from datetime import datetime
+
+import requests
 from kubernetes import client, config
 
 
@@ -38,7 +38,7 @@ class Node:
         self.containers = dict()
 
     def __str__(self):
-        return (f"Node(name={self.name}, ip={self.ip}, ca_ip={self.ca_ip}, containers={self.containers})")
+        return f"Node(name={self.name}, ip={self.ip}, ca_ip={self.ca_ip}, containers={self.containers})"
 
     def update_containers(self, debug=False, custom_label='type=ray'):
         # self.containers = dict()
@@ -55,10 +55,11 @@ class Node:
             for pod in ret.items:
                 if pod.status.phase == "Running":
                     for container_status in pod.status.container_statuses:
-                        # make sure its the proper container
+                        # make sure it's the proper container
                         if container_status.name == custom_label.split("=")[-1]:
-                            self.containers[container_status.container_id.split("//")[1]] = (pod.metadata.name, container_status.name, pod.status.pod_ip)
-        
+                            self.containers[container_status.container_id.split("//")[1]] = (
+                                pod.metadata.name, container_status.name, pod.status.pod_ip)
+
         except Exception as e:
             print(f"Error: {e}")
 
@@ -104,9 +105,12 @@ class Node:
 
                 network_rx_per_second_mb, network_tx_per_second_mb = self.get_throughput(time_interval_seconds)
 
-                throttled = container['stats'][-1]['cpu']['cfs']['throttled_time'] > container['stats'][-3]['cpu']['cfs']['throttled_time']
+                throttled = container['stats'][-1]['cpu']['cfs']['throttled_time'] > \
+                            container['stats'][-3]['cpu']['cfs']['throttled_time']
 
-                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (memory_limit_bytes / (1024 * 1024), memory_usage_megabytes, memory_usage_percentage), (network_rx_per_second_mb, network_tx_per_second_mb), throttled 
+                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (
+                    memory_limit_bytes / (1024 * 1024), memory_usage_megabytes, memory_usage_percentage), (
+                    network_rx_per_second_mb, network_tx_per_second_mb), throttled
             else:
                 print(f"Container {container_id} not found")
                 return (0, 0, 0), (0, 0, 0), (0, 0), (0, 0)
@@ -195,10 +199,13 @@ class Node:
                 io_write_prev = container["stats"][-2]["diskio"]["io_service_bytes"][0]['stats']['Write']
                 io_delta = io_write_curr - io_write_prev
                 io_write_per_second = io_delta / time_interval_seconds
-                
+
                 network_rx_per_second_mb, network_tx_per_second_mb = self.get_throughput(time_interval_seconds)
 
-                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (memory_limit_bytes, memory_usage_megabytes, memory_usage_percentage), (io_read_per_second, io_write_per_second), (network_rx_per_second_mb, network_tx_per_second_mb), (mem_usage_cache, mem_usage_rss, mem_usage_swap, mem_usage_mapped_file, mem_usage_working_set)
+                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (
+                    memory_limit_bytes, memory_usage_megabytes, memory_usage_percentage), (
+                    io_read_per_second, io_write_per_second), (network_rx_per_second_mb, network_tx_per_second_mb), (
+                    mem_usage_cache, mem_usage_rss, mem_usage_swap, mem_usage_mapped_file, mem_usage_working_set)
             else:
                 print(f"Container {container_id} not found")
                 return (0, 0, 0), (0, 0, 0), (0, 0), (0, 0)
@@ -317,7 +324,9 @@ class Node:
                 limit = filesystem['capacity']
                 available = filesystem['available']
                 percentage = (used / limit) * 100
-                return ((used / (1024 * 1024 * 1024)), (limit / (1024 * 1024 * 1024)), (available / (1024 * 1024 * 1024)), percentage)
+                return (
+                    (used / (1024 * 1024 * 1024)), (limit / (1024 * 1024 * 1024)), (available / (1024 * 1024 * 1024)),
+                    percentage)
             else:
                 print("Failed to fetch filesystem usage.")
         else:

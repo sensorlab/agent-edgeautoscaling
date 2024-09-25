@@ -1,4 +1,5 @@
 from kubernetes import client, config
+
 from utils import increment_last_number
 
 
@@ -147,7 +148,8 @@ def create_pod_from(source_pod_name, node_name=None, debug=False):
         return None
 
 
-def patch_pod(pod_name, cpu_request="1", cpu_limit="1", memory_request=None, memory_limit=None, container_name="ray-worker", debug=False, print_output=False, namespace="default"):
+def patch_pod(pod_name, cpu_request="1", cpu_limit="1", memory_request=None, memory_limit=None,
+              container_name="ray-worker", debug=False, print_output=False, namespace="default"):
     if debug:
         config.load_kube_config()
     else:
@@ -197,7 +199,8 @@ def patch_pod(pod_name, cpu_request="1", cpu_limit="1", memory_request=None, mem
 
 def set_container_cpu_values(cpus=50, container='localization-api', n=3):
     for i in range(1, n + 1):
-        patch_pod(f'localization-api{i}', cpu_request=f"{cpus}m", cpu_limit=f"{cpus}m", container_name='localization-api', debug=True, print_output=True)
+        patch_pod(f'localization-api{i}', cpu_request=f"{cpus}m", cpu_limit=f"{cpus}m",
+                  container_name='localization-api', debug=True, print_output=True)
 
 
 if __name__ == '__main__':
@@ -211,9 +214,10 @@ if __name__ == '__main__':
     # create_pod_from('localization-api1', node_name='raspberrypi2', debug=True)
     # create_pod_from('localization-api2', node_name='raspberrypi1', debug=True)
     # create_pod_from('localization-api3', node_name='raspberrypi2', debug=True)
-    
+
     # Testing RAM memory, works...
-    # patch_pod('localization-api2', container_name='localization-api', memory_request='2Gi', memory_limit='2Gi', debug=True)
+    # patch_pod('localization-api2', container_name='localization-api', memory_request='2Gi',
+    # memory_limit='2Gi', debug=True)
     # create_worker_pod()
     # create_worker_pod()
     # create_worker_pod()

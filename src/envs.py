@@ -1,9 +1,8 @@
 import numpy as np
-
 from gymnasium import Env, spaces
 
-from utils import init_nodes, load_config
 from pod_controller import patch_pod
+from utils import init_nodes, load_config
 
 
 class BaseElasticityEnv(Env):
@@ -16,10 +15,10 @@ class BaseElasticityEnv(Env):
         self.app_label = config['target_app_label']
         self.pod_name = f'{self.container_name}{id}'
 
-        self.MAX_CPU_LIMIT = config['max_cpu'] # Dynamic, can change from outer scope
+        self.MAX_CPU_LIMIT = config['max_cpu']  # Dynamic, can change from outer scope
         self.MIN_CPU_LIMIT = config['min_cpu']
-        self.INCREMENT = config['discrete_increment'] # Used for discrete action space
-        self.scale_action = config['scale_action'] # Used for continuous action space
+        self.INCREMENT = config['discrete_increment']  # Used for discrete action space
+        self.scale_action = config['scale_action']  # Used for continuous action space
 
         # self.ALLOCATED = 50
         self.AVAILABLE = 1000
@@ -39,10 +38,9 @@ class BaseElasticityEnv(Env):
                     break
         print(f"Initialized Env {self.id} with {self.node}")
 
-        # Initlized allocated resources of how much current does the pod have
-        (cpu_limit, cpu, cpu_percentage), (memory_limit, memory, memory_percentage), (rx, tx), throttled = self.node.get_container_usage(self.container_id)
+        # Initialized allocated resources of how much current does the pod have
+        (cpu_limit, _, _), (_, _, _), (_, _), _ = self.node.get_container_usage(self.container_id)
         self.ALLOCATED = cpu_limit
-
 
         self.other_util = 0.0
         self.STATE_LENTGH = config['state_history']
@@ -55,9 +53,10 @@ class BaseElasticityEnv(Env):
         self.previous_cpu_percentage = 0
         self.priority = 1.0
         self.other_priorities = 0.0
-        
+
         self.state = self.get_current_usage()
-        self.observation_space = spaces.Box(low=np.float32(0), high=np.float32(1), shape=(self.STATE_LENTGH * len(self.state[0]),))
+        self.observation_space = spaces.Box(low=np.float32(0), high=np.float32(1),
+                                            shape=(self.STATE_LENTGH * len(self.state[0]),))
 
         self.steps = 0
         self.MAX_STEPS = config['max_steps']
@@ -65,12 +64,13 @@ class BaseElasticityEnv(Env):
         # 30% - 60%
         self.UPPER_CPU = config['upper_cpu']
         self.LOWER_CPU = config['lower_cpu']
-        
+
     def norm_cpu(self, cpu_usage):
         return cpu_usage / self.MAX_CPU_LIMIT
 
     def get_current_usage(self):
-        (cpu_limit, cpu, cpu_percentage), (memory_limit, memory, memory_percentage), (rx, tx), throttled = self.node.get_container_usage(self.container_id)
+        (cpu_limit, cpu, cpu_percentage), (_, _, _), (_, _), _ = self.node.get_container_usage(
+            self.container_id)
         self.previous_cpu_percentage = self.last_cpu_percentage
         self.last_cpu_percentage = cpu_percentage
         n_cpu_limit, n_cpu = self.norm_cpu(cpu_limit), self.norm_cpu(cpu)
@@ -80,27 +80,30 @@ class BaseElasticityEnv(Env):
         if self.independent_state:
             state = [n_cpu_limit, n_cpu, available_normed, cpu_percentage / 100, self.priority]
         else:
-            state = [n_cpu_limit, n_cpu, available_normed, cpu_percentage / 100, self.other_util / 100, self.priority, self.other_priorities]
+            state = [n_cpu_limit, n_cpu, available_normed, cpu_percentage / 100, self.other_util / 100, self.priority,
+                     self.other_priorities]
         # state = [n_cpu_limit, n_cpu, available_normed, self.last_cpu_percentage / 100]
 
         self.states_fifo.append(state)
         self.states_fifo.pop(0)
         return self.states_fifo
-    
+
     def reset(self):
         self.state = self.get_current_usage()
         self.steps = 0
-        
+
         # Fill state with the last value
         self.state = [self.state[-1]] * self.STATE_LENTGH
 
         return self.state
 
     def set_last_limit(self):
-        patch_pod(self.pod_name, cpu_request=f"{self.ALLOCATED}m", cpu_limit=f"{self.ALLOCATED}m", container_name=self.container_name, debug=self.debug_deployment)
+        patch_pod(self.pod_name, cpu_request=f"{self.ALLOCATED}m", cpu_limit=f"{self.ALLOCATED}m",
+                  container_name=self.container_name, debug=self.debug_deployment)
 
     def patch(self, limit):
-        patch_pod(self.pod_name, cpu_request=f"{limit}m", cpu_limit=f"{limit}m", container_name=self.container_name, debug=self.debug_deployment)
+        patch_pod(self.pod_name, cpu_request=f"{limit}m", cpu_limit=f"{limit}m", container_name=self.container_name,
+                  debug=self.debug_deployment)
         self.ALLOCATED = limit
 
     def get_container_usage(self):
@@ -182,18 +185,21 @@ class DiscreteElasticityEnv(BaseElasticityEnv):
         done = self.steps >= self.MAX_STEPS
 
         return self.state, reward, done, 0
-    
+
     def increase_resources(self):
         # cpu_limit, memory_limit = self.node.get_container_limits(self.container_id)
-        updated_cpu_limit = int(max(min(self.ALLOCATED + self.INCREMENT, self.ALLOCATED + self.AVAILABLE), self.MIN_CPU_LIMIT))
+        updated_cpu_limit = int(
+            max(min(self.ALLOCATED + self.INCREMENT, self.ALLOCATED + self.AVAILABLE), self.MIN_CPU_LIMIT))
         self.ALLOCATED = updated_cpu_limit
-        patch_pod(self.pod_name, cpu_request=f"{updated_cpu_limit}m", cpu_limit=f"{updated_cpu_limit}m", container_name=self.container_name, debug=self.debug_deployment)
+        patch_pod(self.pod_name, cpu_request=f"{updated_cpu_limit}m", cpu_limit=f"{updated_cpu_limit}m",
+                  container_name=self.container_name, debug=self.debug_deployment)
 
     def decrease_resources(self):
         # cpu_limit, memory_limit = self.node.get_container_limits(self.container_id)
         updated_cpu_limit = int(max(self.ALLOCATED - self.INCREMENT, self.MIN_CPU_LIMIT))
         self.ALLOCATED = updated_cpu_limit
-        patch_pod(self.pod_name, cpu_request=f"{updated_cpu_limit}m", cpu_limit=f"{updated_cpu_limit}m", container_name=self.container_name, debug=self.debug_deployment)
+        patch_pod(self.pod_name, cpu_request=f"{updated_cpu_limit}m", cpu_limit=f"{updated_cpu_limit}m",
+                  container_name=self.container_name, debug=self.debug_deployment)
 
 
 class ContinuousElasticityEnv(BaseElasticityEnv):
@@ -207,10 +213,11 @@ class ContinuousElasticityEnv(BaseElasticityEnv):
         action = np.clip(action, self.action_space.low, self.action_space.high)
 
         scale_action = action[0] * self.scale_action
-        if scale_action <= max(self.AVAILABLE, 0): # If available is negative
+        if scale_action <= max(self.AVAILABLE, 0):  # If available is negative
             new_resource_limit = int(max(self.ALLOCATED + scale_action, self.MIN_CPU_LIMIT))
             self.ALLOCATED = new_resource_limit
-            patch_pod(self.pod_name, cpu_request=f"{new_resource_limit}m", cpu_limit=f"{new_resource_limit}m", container_name=self.container_name, debug=self.debug_deployment)
+            patch_pod(self.pod_name, cpu_request=f"{new_resource_limit}m", cpu_limit=f"{new_resource_limit}m",
+                      container_name=self.container_name, debug=self.debug_deployment)
 
         reward = self.calculate_agent_reward(rf)
 
@@ -222,7 +229,7 @@ class ContinuousElasticityEnv(BaseElasticityEnv):
     def mimic_step(self):
         self.state = self.get_current_usage()
 
-        reward = self.calculate_agent_reward()
+        reward = self.calculate_agent_reward(2)
 
         self.steps += 1
         done = self.steps >= self.MAX_STEPS
@@ -251,7 +258,7 @@ class InstantContinuousElasticityEnv(BaseElasticityEnv):
                 container_name=self.container_name,
                 debug=self.debug_deployment
             )
-        
+
         reward = self.calculate_agent_reward(rf)
         self.steps += 1
         done = self.steps >= self.MAX_STEPS

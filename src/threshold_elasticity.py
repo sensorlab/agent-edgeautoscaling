@@ -3,7 +3,6 @@ import time
 from pod_controller import patch_pod
 from utils import init_nodes, load_config
 
-
 if __name__ == '__main__':
     config = load_config()
     debug_deployment = config['debug_deployment']
@@ -14,19 +13,21 @@ if __name__ == '__main__':
     UPPER = config['upper_cpu']
     LOWER = config['lower_cpu']
     action_interval = config['action_interval']
-    
+
     resources = 1000
     AVAILABLE = resources
     print_output = True
 
-    print(f"DEBUG: {debug_deployment}, custom_app_label: {target_app_label}, scale_cpu: {scale_cpu}, max_cpu: {max_cpu}, CPU limits: upper: {UPPER}, lower: {LOWER}, action_interval: {action_interval}")
+    print(
+        f"DEBUG: {debug_deployment}, custom_app_label: {target_app_label}, scale_cpu: {scale_cpu}, "
+        f"max_cpu: {max_cpu}, CPU limits: upper: {UPPER}, lower: {LOWER}, action_interval: {action_interval}")
 
     nodes = init_nodes(debug_deployment, custom_label=target_app_label)
 
     for node in nodes:
         for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
             patch_pod(pod_name, cpu_request=f"{min_cpu}m", cpu_limit=f"{min_cpu}m",
-                        container_name=container_name, debug=debug_deployment, print_output=print_output)
+                      container_name=container_name, debug=debug_deployment, print_output=print_output)
 
     updated_container_ids = []
     while True:
