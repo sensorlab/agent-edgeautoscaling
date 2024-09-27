@@ -235,6 +235,9 @@ class Node:
             # print(f"Packets per second: {packets_per_second}")
 
             return (network_rx_per_second / (1024 * 1024)), (network_tx_per_second / (1024 * 1024))
+        else:
+            print("Failed to fetch containers stats")
+            return 0, 0
 
     def get_usage(self):
         summary_url = f"http://{self.ca_ip}:8080/api/v2.0/summary"
@@ -288,6 +291,7 @@ class Node:
             return total_cpu_capacity_millicores, total_memory_capacity
         else:
             print("Failed to fetch machine information.")
+            return 0, 0
 
     def get_allocated_resources(self):
         allocated_cpu = 0

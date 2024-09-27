@@ -300,7 +300,7 @@ if __name__ == '__main__':
 
     set_available_resource(envs, RESOURCES)
 
-    agents = [DQNAgent(env, double=double, dueling=dueling, device=device, memory_size=MEMORY_SIZE) for env in envs]
+    agents = [DQNAgent(env, double=double, dueling=dueling, device=str(device), memory_size=MEMORY_SIZE) for env in envs]
 
     if weights_dir:
         for i, agent in enumerate(agents):

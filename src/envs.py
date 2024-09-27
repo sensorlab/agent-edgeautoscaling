@@ -20,7 +20,6 @@ class BaseElasticityEnv(Env):
         self.INCREMENT = config['discrete_increment']  # Used for discrete action space
         self.scale_action = config['scale_action']  # Used for continuous action space
 
-        # self.ALLOCATED = 50
         self.AVAILABLE = 1000
 
         self.independent_state = independent_state
@@ -135,6 +134,7 @@ class BaseElasticityEnv(Env):
                     reward = min(delta / 10, 1) if delta > 0 else max(delta / 10, -1)
                     # So, if from 10 to 15, reward is 0.5. and from 40 to 10, reward is -1
                 return reward
+        return reward
 
         # if self.dqn_reward:
         #     if self.last_cpu_percentage < self.LOWER_CPU:
@@ -145,25 +145,6 @@ class BaseElasticityEnv(Env):
         #     else:
         #         usage_penalty = 0
         #     reward = - usage_penalty
-        # else:
-        #     reward = 0
-        #     if self.LOWER_CPU <= self.last_cpu_percentage <= self.UPPER_CPU:
-        #         # reward = (self.last_cpu_percentage - self.LOWER_CPU) / (self.UPPER_CPU - self.LOWER_CPU) # map 0 to 1
-        #         # reward = 1
-        #         reward = 1 + (self.last_cpu_percentage / (self.UPPER_CPU - self.LOWER_CPU))
-        #     elif self.last_cpu_percentage < self.LOWER_CPU:
-        #         # Last = current
-        #         delta = self.last_cpu_percentage - self.previous_cpu_percentage
-        #         reward = min(delta / 10, 1) if delta > 0 else max(delta / 10, -1)
-        #         # So, if from 10 to 15, reward is 0.5. and from 40 to 10, reward is -1
-        #         # if delta > 0:
-        #         #     reward = min(delta / 10, 1)
-        #         # else:
-        #         #     reward = max(delta / 10, -1)
-        #     elif self.last_cpu_percentage > self.UPPER_CPU:
-        #         curr_percentage = min(self.last_cpu_percentage, 100) # Can be higher than 100, so we avoid that
-        #         reward = 1 - 2 * ((curr_percentage - self.UPPER_CPU) / (100 - self.UPPER_CPU))
-        # return reward
 
 
 class DiscreteElasticityEnv(BaseElasticityEnv):

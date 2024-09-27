@@ -12,8 +12,6 @@ from envs import set_available_resource, set_other_priorities, set_other_utiliza
 
 class Application:
     def __init__(self):
-        self.envs = None
-        self.agents = None
         self.resources = 1000
         self.debug = False
         self.action_interval = 1

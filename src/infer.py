@@ -11,7 +11,10 @@ from train_ppo import PPO
 
 
 def initialize_agents(n_agents=3, resources=1000, tl_agent=None, model=None, algorithm='ppo', independent=False,
-                      priorities=None):
+                      priorities=[1.0, 1.0, 1.0]):
+    if not model:
+        raise ValueError("Please provide a model to load")
+    
     match algorithm:
         case 'ppo' | 'ddpg':
             instant = False
@@ -23,8 +26,7 @@ def initialize_agents(n_agents=3, resources=1000, tl_agent=None, model=None, alg
             instant = False
             discrete = True
         case _:
-            print("Invalid algorithm")
-            return
+            raise ValueError("Invalid algorithm")
 
     if discrete:
         envs = [DiscreteElasticityEnv(i, independent_state=independent) for i in range(1, n_agents + 1)]
@@ -45,10 +47,6 @@ def initialize_agents(n_agents=3, resources=1000, tl_agent=None, model=None, alg
         case 'ddpg' | 'iddpg':
             agents = [DDPGagent(env, hidden_size=64, sigmoid_output=instant) for env in envs]
 
-    if not model:
-        print("Please provide a model to load")
-        return
-
     for agent_id, agent in enumerate(agents):
         if isinstance(tl_agent, int):
             agent.load(model, agent_id=tl_agent)
@@ -65,6 +63,9 @@ def initialize_agents(n_agents=3, resources=1000, tl_agent=None, model=None, alg
 
 
 def infer(agents=None, envs=None, resources=None, debug=False, action_interval=None):
+    if agents is None or envs is None or resources is None or action_interval is None:
+        raise ValueError("Please provide agents, environments, resources and action interval")
+
     other_envs = [[env for env in envs if env != envs[i]] for i in range(len(envs))]
 
     states = [np.array(env.reset()).flatten() for env in envs]

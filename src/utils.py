@@ -44,10 +44,14 @@ def make_request(url, data):
         response = requests.post(url, data=json.dumps(data), headers=headers, timeout=30)
     except Exception as e:
         pass
-    if response is not None and response.status_code != 200:
-        # print(f"Error making prediction: {response.text}")
+
+    if response is not None:
+        if response.status_code != 200:
+            # print(f"Error making prediction: {response.text}")
+            return None
+        return response.elapsed.total_seconds()
+    else:
         return None
-    return response.elapsed.total_seconds()
 
 
 def increment_last_number(input_string):
