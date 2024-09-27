@@ -1,33 +1,49 @@
-# Uses the python client for kubernetes, to use it, this command is necessary to load the correct credentials and cluster information for the master node.
+# Kubernetes Configuration Setup
 
-- k3s
+To use the Python client for Kubernetes, you need to load the correct credentials and cluster information for the master node.
 
-```shell
+### k3s
+
+```bash
 sudo cat /etc/rancher/k3s/k3s.yaml > ~/.kube/config
 ```
 
-- microk8s
+### microk8s
 
-```shell
+```bash
 kubectl config view --raw > ~/.kube/config
 ```
 
-# Debug Elasticity FastAPI application
+# Running the Elasticity FastAPI Application Locally
 
-```shell
-uvicorn --app-dir src/ app:elasticity_app --reload
+To run the Elasticity FastAPI application locally for debug purposes, use the following command:
+
+```bash
+uvicorn --app-dir src app:elasticity_app --reload
 ```
 
-## Build it locally
+# Building the Application Locally with Docker
 
-```shell
-docker build -t elasticity-app -f src/Dockerfile .
-sudo docker run -d -p 8000:8000 elasticity-app
-```
+To build the application locally using Docker, follow these steps:
 
-## Build an multi-arch image and push to dockerhub
+1. Build the Docker image:
+    ```bash
+    docker build -t elasticity-app -f src/Dockerfile .
+    ```
 
-```shell
+2. Run the Docker container:
+    ```bash
+    sudo docker run -d -p 8000:8000 elasticity-app
+    ```
+
+# Building a Multi-Arch Image and Pushing to DockerHub
+
+To build a multi-architecture Docker image and push it to DockerHub, use the following command:
+
+```bash
 sudo docker buildx build --platform linux/amd64,linux/arm64 -t <username>/<docker-image-name> -f src/Dockerfile . --push
 ```
 
+Replace `<username>` and `<docker-image-name>` with your DockerHub username and the desired image name, respectively.
+
+---

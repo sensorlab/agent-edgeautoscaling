@@ -1,6 +1,9 @@
 # Resouce Elasticity NANCY
 
-In this project, the scaling approach involves deploying an agent per pod, which is a vertical scaling strategy. This method is particularly well-suited for stateful applications. The system is highly scalable because we can add an agent for every pod, and the interval of scaling can be as low as 1 second, allowing for rapid adjustments to resource demands.
+In this project, the scaling approach involves deploying an agent per pod, which is a vertical 
+scaling strategy. This method is particularly well-suited for stateful applications. 
+The system is highly scalable because we can add an agent for every pod, and the interval of 
+scaling can be as low as 1 second, allowing for rapid adjustments to resource demands.
 
 ## File Structure
 
@@ -10,14 +13,13 @@ Scripts are meant to run from the project root folder.
 
 ### Prerequisites
 
-- Disable swap for optimal performance and stability on all Kubernetes nodes:
-```bash
-sudo swapoff -a
-```
-
 #### Feature Gates
 
 - Usage of InPlacePodVerticalScaling feature gate is required for certain functionalities.
+
+```
+kubectl patch pod localization-api1 --patch '{"spec":{"containers":[{"name":"localization-api", "resources":{"requests":{"cpu":"500m"}, "limits":{"cpu":"500m"}}}]}}'
+```
 
 #### Python Requirements
 
@@ -54,7 +56,7 @@ sudo bash scripts/microk8s/deploy_all.sh
 To run the inference script, use the following command:
 
 ```bash
-python src/infer.py --help
+python src/infer.py
 ```
 
 ### Inference Script Usage
@@ -79,13 +81,28 @@ options:
 ## Training
 
 Three multi-agent reinforcement learning algorithms are supported:
-- DQN
-- PPO
-- DDPG
+- DQN: Actions are {increase, maintain, decrease}
+- PPO: Outputs a continuous number [-1, 1], scaled and applied. Can also be discrete like DQN.
+- DDPG: Similar to PPO, outputs a continuous number.
 
 ## Application Backend
+Avaialbe as a [Docker image](https://hub.docker.com/repository/docker/wrathchild14/elasticity/general)
+or run locally, refer to [other readme](/src/readme.md).
 
-TBD (elasticity_mdqn_module)
+### API Endpoints that are currently supported
+| Endpoint                | Method | Description                                      | Request Body                                                                 | Response                                                                 |
+|-------------------------|--------|--------------------------------------------------|------------------------------------------------------------------------------|--------------------------------------------------------------------------|
+| `/start`                | POST   | Starts the inference process                     | None                                                                         | `{ "message": "Inference started" }`                                     |
+| `/stop`                 | POST   | Stops the inference process                      | None                                                                         | `{ "message": "Inference stopped" }`                                     |
+| `/set_resources`        | POST   | Sets the maximum CPU resources                   | `{ "resources": int }`                                                       | `{ "message": "Resources set to {resources}" }`                          |
+| `/set_interval`         | POST   | Sets the interval between actions                | `{ "interval": int }`                                                        | `{ "message": "Interval set to {interval}" }`                            |
+| `/set_dqn_algorithm`    | POST   | Sets the algorithm to DQN                        | None                                                                         | `{ "message": "DQN algorithm set" }`                                     |
+| `/set_ppo_algorithm`    | POST   | Sets the algorithm to PPO                        | None                                                                         | `{ "message": "PPO algorithm set" }`                                     |
+| `/status`               | GET    | Gets the status of the inference process         | None                                                                         | `{ "status": bool }`                                                     |
+| `/algorithm`            | GET    | Gets the current algorithm being used            | None                                                                         | `{ "algorithm": "ppo" | "dqn" }`                                         |
+| `/resources`            | GET    | Gets the current maximum CPU resources           | None                                                                         | `{ "resources": int }`                                                   |
+| `/interval`             | GET    | Gets the current action interval                 | None                                                                         | `{ "interval": int }`                                                    |
+
 
 ## Frontend
 
@@ -95,4 +112,5 @@ For the frontend, refer to the following repository:
 ## Notes
 
 - Ensure all containers are running the same Python version.
-- In Kubernetes, it is recommended to disable swap on all nodes to maximize resource utilization. All deployments should have CPU and memory limits set.
+- In Kubernetes, it is recommended to disable swap with `sudo swapoff -a` on all nodes to maximize 
+resource utilization. All deployments should have CPU and memory limits set.

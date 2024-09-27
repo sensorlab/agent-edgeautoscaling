@@ -34,3 +34,4 @@ jobs:
         tags: |
           wrathchild14/elasticity:latest
           wrathchild14/elasticity:${{ github.sha }}
+          wrathchild14/elasticity:${{ github.ref_name }}
