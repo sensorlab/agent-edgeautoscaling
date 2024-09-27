@@ -10,5 +10,7 @@ requests
 scikit-learn
 scipy
 torch
+torchvision
 tqdm
 kubernetes
+uvicorn
