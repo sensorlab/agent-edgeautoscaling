@@ -222,6 +222,7 @@ class PPO:
             state = torch.FloatTensor(state).to(device)
             if self.has_continuous_action_space:
                 action = self.policy.actor(state)
+                action = action.detach().cpu().numpy().flatten()
             else:
                 action_probs = self.policy.actor(state)
                 action = torch.argmax(action_probs, dim=-1)
@@ -296,14 +297,14 @@ class PPO:
         torch.save(self.policy_old.state_dict(), checkpoint_path)
 
     def load_checkpoint(self, checkpoint_path):
-        self.policy_old.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage))
-        self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage))
+        self.policy_old.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage, weights_only=True))
+        self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage, weights_only=True))
 
     def load(self, folder_path, agent_id=None):
         self.policy_old.load_state_dict(
-            torch.load(f"{folder_path}/agent_{agent_id}.pth", map_location=lambda storage, loc: storage))
+            torch.load(f"{folder_path}/agent_{agent_id}.pth", map_location=lambda storage, loc: storage, weights_only=True))
         self.policy.load_state_dict(
-            torch.load(f"{folder_path}/agent_{agent_id}.pth", map_location=lambda storage, loc: storage))
+            torch.load(f"{folder_path}/agent_{agent_id}.pth", map_location=lambda storage, loc: storage, weights_only=True))
         print(f"Loaded model from {folder_path}/agent_{agent_id}.pth")
 
 

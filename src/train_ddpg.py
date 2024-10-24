@@ -217,9 +217,9 @@ class DDPGagent():
 
     def load(self, folder_path, agent_id):
         self.actor.load_state_dict(
-            torch.load(f"{folder_path}/agent_{agent_id}_actor.pth", map_location=lambda storage, loc: storage))
+            torch.load(f"{folder_path}/agent_{agent_id}_actor.pth", map_location=lambda storage, loc: storage, weights_only=True))
         self.critic.load_state_dict(
-            torch.load(f"{folder_path}/agent_{agent_id}_critic.pth", map_location=lambda storage, loc: storage))
+            torch.load(f"{folder_path}/agent_{agent_id}_critic.pth", map_location=lambda storage, loc: storage, weights_only=True))
 
     def save(self, folder_path, agent_id=None):
         torch.save(self.actor.state_dict(), f"{folder_path}/agent_{agent_id}_actor.pth")
@@ -230,8 +230,8 @@ class DDPGagent():
         torch.save(self.critic.state_dict(), path + "_critic.pth")
 
     def load_checkpoint(self, path):
-        self.actor.load_state_dict(torch.load(path + "_actor.pth"))
-        self.critic.load_state_dict(torch.load(path + "_critic.pth"))
+        self.actor.load_state_dict(torch.load(path + "_actor.pth", weights_only=True))
+        self.critic.load_state_dict(torch.load(path + "_critic.pth", weights_only=True))
 
 
 def describe_env(env):

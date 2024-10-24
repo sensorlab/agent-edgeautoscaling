@@ -181,7 +181,7 @@ class DQNAgent:
         self.optimizer.step()
 
     def load(self, folder_path, agent_id=None):
-        self.policy_net.load_state_dict(torch.load(f"{folder_path}/model_weights_agent_{agent_id}.pth"))
+        self.policy_net.load_state_dict(torch.load(f"{folder_path}/model_weights_agent_{agent_id}.pth", weights_only=True))
         self.target_net.load_state_dict(self.policy_net.state_dict())
         print(f"Loaded weights for agent {agent_id}, located: {folder_path}")
 
@@ -189,7 +189,7 @@ class DQNAgent:
         torch.save(self.policy_net.state_dict(), path)
 
     def load_checkpoint(self, path):
-        self.policy_net.load_state_dict(torch.load(path))
+        self.policy_net.load_state_dict(torch.load(path, weights_only=True))
         self.target_net.load_state_dict(self.policy_net.state_dict())
         print(f"Loaded checkpoint located: {path}")
 
