@@ -99,7 +99,7 @@ or run locally, refer to [other readme](/src/readme.md).
 | `/set_dqn_algorithm`    | POST   | Sets the algorithm to DQN                        | None                                                                         | `{ "message": "DQN algorithm set" }`                                     |
 | `/set_ppo_algorithm`    | POST   | Sets the algorithm to PPO                        | None                                                                         | `{ "message": "PPO algorithm set" }`                                     |
 | `/status`               | GET    | Gets the status of the inference process         | None                                                                         | `{ "status": bool }`                                                     |
-| `/algorithm`            | GET    | Gets the current algorithm being used            | None                                                                         | `{ "algorithm": "ppo" | "dqn" }`                                         |
+| `/algorithm`            | GET    | Gets the current algorithm being used            | None                                                                         | `{"algorithm": "ppo", "dqn"}`                                         |
 | `/resources`            | GET    | Gets the current maximum CPU resources           | None                                                                         | `{ "resources": int }`                                                   |
 | `/interval`             | GET    | Gets the current action interval                 | None                                                                         | `{ "interval": int }`                                                    |
 
