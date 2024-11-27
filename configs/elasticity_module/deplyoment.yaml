@@ -1,32 +1,55 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: elasticity-module
+  name: elasticity-app
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: elasticity-module
+      app: elasticity-app
   template:
     metadata:
       labels:
-        app: elasticity-module
+        app: elasticity-app
     spec:
       nodeSelector:
         cluster: vm
-      volumes:
-        - name: dshm
-          emptyDir:
-            medium: Memory
       containers:
-        - name: module
-          image: wrathchild14/python-elacticity-module:latest
-          resources:
-            limits:
-              cpu: "500m"
-              memory: 2Gi
-            requests:
-              cpu: "500m"
-              memory: 1Gi
+        - name: elasticity-app
+          image: wrathchild14/elasticity:latest
           imagePullPolicy: Always
-          command: ["python", "main.py"]
+          ports:
+          - containerPort: 8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticity-app-service
+spec:
+  selector:
+    app: elasticity-app
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: elasticity-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: elastic.localhost
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: elasticity-app-service
+            port:
+              number: 8080
