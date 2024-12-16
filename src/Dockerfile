@@ -19,6 +19,7 @@ COPY configs/elasticity_config.yaml configs/elasticity_config.yaml
 
 COPY trained/dqn/mdqn1000ep1000m25inc2_rf_20rps5.0alpha1000res trained/dqn/mdqn1000ep1000m25inc2_rf_20rps5.0alpha1000res
 COPY trained/ppo/1000ep_rf_2_20rps10kepochs5alpha10epupdate50scale_a_1000resources trained/ppo/1000ep_rf_2_20rps10kepochs5alpha10epupdate50scale_a_1000resources
+COPY trained/ddpg/1000ep_2rf_20rps5.0alpha_50scale1000resources trained/ddpg/1000ep_2rf_20rps5.0alpha_50scale1000resources
 
 EXPOSE 8000
 
