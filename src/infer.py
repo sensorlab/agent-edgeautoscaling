@@ -4,14 +4,15 @@ import time
 import numpy as np
 
 from envs import (ContinuousElasticityEnv, DiscreteElasticityEnv, InstantContinuousElasticityEnv, 
-                  set_available_resource, set_other_priorities, set_other_utilization)
+                  set_available_resource, set_other_priorities, set_other_utilization,
+                  FiveDiscreteElasticityEnv, ElevenDiscrElasticityEnv)
 from train_ddpg import DDPGagent
 from train_mdqn import DQNAgent
 from train_ppo import PPO
 
 
-def initialize_agents(n_agents=3, resources=1000, tl_agent=None, model=None, algorithm='ppo', independent=False,
-                      priorities=[1.0, 1.0, 1.0]):
+def initialize_agent(id=None, resources=1000, tl_agent=None, model=None, algorithm='ppo', independent=False,
+                      priority=1.0, scale_action=None):
     if not model:
         raise ValueError("Please provide a model to load")
     
@@ -29,7 +30,60 @@ def initialize_agents(n_agents=3, resources=1000, tl_agent=None, model=None, alg
             raise ValueError("Invalid algorithm")
 
     if discrete:
-        envs = [DiscreteElasticityEnv(i, independent_state=independent) for i in range(1, n_agents + 1)]
+        env = DiscreteElasticityEnv(id, independent_state=independent)
+    else:
+        if instant:
+            env = InstantContinuousElasticityEnv(id, independent_state=independent)
+        else:
+            env = ContinuousElasticityEnv(id, independent_state=independent)
+
+    match algorithm:
+        case 'ppo' | 'dppo' | 'ippo':
+            agent = PPO(env, has_continuous_action_space=not discrete, action_std_init=1e-10, sigmoid_output=instant)
+        case 'mdqn' | 'dmdqn':
+            agent = DQNAgent(env)
+        case 'ddmdqn':
+            agent = DQNAgent(env, dueling=True)
+        case 'ddpg' | 'iddpg':
+            agent = DDPGagent(env, hidden_size=64, sigmoid_output=instant)
+
+    if isinstance(tl_agent, int):
+        agent.load(model, agent_id=tl_agent)
+    else:
+        agent.load(model, agent_id=id)
+
+    env.MAX_CPU_LIMIT = resources
+    env.priority = priority
+    if scale_action:
+        env.scale_action = scale_action
+
+    return env, agent
+
+def initialize_agents(n_agents=3, resources=1000, tl_agent=None, model=None, algorithm='ppo', independent=False,
+                      priorities=[1.0, 1.0, 1.0], scale_action=None, five=False, eleven=False):
+    if not model:
+        raise ValueError("Please provide a model to load")
+    
+    match algorithm:
+        case 'ppo' | 'ddpg':
+            instant = False
+            discrete = False
+        case 'ippo' | 'iddpg':
+            instant = True
+            discrete = False
+        case 'mdqn' | 'dmdqn' | 'ddmdqn' | 'dppo':
+            instant = False
+            discrete = True
+        case _:
+            raise ValueError("Invalid algorithm")
+
+    if discrete:
+        if five:
+            envs = [FiveDiscreteElasticityEnv(i, independent_state=independent) for i in range(1, n_agents + 1)]
+        elif eleven:
+            envs = [ElevenDiscrElasticityEnv(i, independent_state=independent) for i in range(1, n_agents + 1)]
+        else:
+            envs = [DiscreteElasticityEnv(i, independent_state=independent) for i in range(1, n_agents + 1)]
     else:
         if instant:
             envs = [InstantContinuousElasticityEnv(i, independent_state=independent) for i in range(1, n_agents + 1)]
@@ -56,13 +110,15 @@ def initialize_agents(n_agents=3, resources=1000, tl_agent=None, model=None, alg
     for i, env in enumerate(envs):
         env.MAX_CPU_LIMIT = resources
         env.priority = priorities[i]
+        if scale_action:
+            env.scale_action = scale_action
 
     set_available_resource(envs, resources)
 
     return envs, agents
 
 
-def infer(agents=None, envs=None, resources=None, debug=False, action_interval=None):
+def infer(agents=None, envs=None, resources=None, debug=False, action_interval=None, shared_envs=None):
     if agents is None or envs is None or resources is None or action_interval is None:
         raise ValueError("Please provide agents, environments, resources and action interval")
 
@@ -78,6 +134,10 @@ def infer(agents=None, envs=None, resources=None, debug=False, action_interval=N
             set_other_priorities(envs[i], other_envs[i])
 
             state, reward, done, _ = envs[i].step(action, 2)
+            if shared_envs:
+                shared_envs[i]['cummulative_delta'] = envs[i].cummulative_delta
+                envs[i].priority = shared_envs[i]['priority']
+
             set_available_resource(envs, resources)
             states.append(np.array(state).flatten())
             rewards.append(reward)
@@ -100,7 +160,7 @@ if __name__ == '__main__':
     parser.add_argument('--load_model', type=str,
                         default='trained/ppo/1000ep_rf_2_20rps10kepochs5alpha10epupdate50scale_a_1000resources')  # Default trained weights for ppo model
     parser.add_argument('--action_interval', type=float, default=5.0)
-    parser.add_argument('--priorities', type=float, nargs='+', default=[1.0, 1.0, 1.0],
+    parser.add_argument('--priorities', type=float, nargs='+', default=[1.0, 1.0, 1.0, 1.0],
                         help='List of priorities (0.0 < value <= 1.0), default is 1.0 for all agents. Example: 1.0 1.0 1.0')
 
     parser.add_argument('--algorithm', type=str, default='ppo',
@@ -108,12 +168,14 @@ if __name__ == '__main__':
 
     parser.add_argument('--hack', type=int, default=None,
                         help='Transfer learning agent, so every agent will loaded from this agent saved weights')
-
+    parser.add_argument('--scale_action', type=int, default=50,
+                        help='Overwrite the scale action value for the agents')
     # parser.add_argument('--independent', action='store_true', help='Independent')
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
     envs, agents = initialize_agents(n_agents=args.n_agents, algorithm=args.algorithm, tl_agent=args.hack,
-                                     model=args.load_model, priorities=args.priorities, resources=args.resources)
+                                     model=args.load_model, priorities=args.priorities, resources=args.resources,
+                                     scale_action=args.scale_action)
 
     infer(agents=agents, envs=envs, resources=args.resources, debug=args.debug, action_interval=args.action_interval)

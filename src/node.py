@@ -40,8 +40,10 @@ class Node:
     def __str__(self):
         return f"Node(name={self.name}, ip={self.ip}, ca_ip={self.ca_ip}, containers={self.containers})"
 
-    def update_containers(self, debug=False, custom_label='type=ray'):
-        # self.containers = dict()
+    def update_containers(self, debug=False, custom_label='type=ray', reset_containers=False):
+        if reset_containers:
+            self.containers = dict()
+
         if debug:
             config.load_kube_config()
         else:
