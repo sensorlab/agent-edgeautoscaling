@@ -55,4 +55,7 @@ microk8s helm install stack prometheus-community/kube-prometheus-stack --namespa
 log "Deploying localization services"
 microk8s kubectl apply -f configs/localization/separate_services.yaml
 
+log "Deploying elasticity module"
+microk8s kubectl apply -f configs/elasticity_module/deployment.yaml
+
 log "Deployment completed successfully"
