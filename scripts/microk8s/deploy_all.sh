@@ -23,7 +23,7 @@ for node in $nodes; do
     case $node in
         $edge_nodes*)
             microk8s kubectl label nodes $node cluster=rasp$((++i)) --overwrite
-            log "Labeling $node with cluster=rasp$((++i))"
+            log "Labeling $node with cluster=rasp$i"
             ;;
         $master_node*)
             microk8s kubectl label nodes $node cluster=vm --overwrite
