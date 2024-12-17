@@ -25,7 +25,7 @@ class Application:
         self.resources = 1000
         self.debug = False
         self.action_interval = 1
-        self.set_algorithm("dqn")
+        self.current_algorithm = "dqn"
         self.infer_thread = None
         self.stop_signal = threading.Event()
         self.lock = threading.Lock()
@@ -138,7 +138,22 @@ class Application:
             )
             self.deltas_for_alg = []
 
+        if self.debug:
+            print(f"Setting algorithm to {algorithm}")
+
+        if algorithm not in ["dqn", "ppo", "ddpg"]:
+            return {"message": "Invalid algorithm"}
+
+        if self.current_algorithm == algorithm:
+            return {"message": f"{algorithm} algorithm already set"}
+
         self.current_algorithm = algorithm
+        pod_names = [env.pod_name for env in self.envs]
+        self.agents, self.envs, self.other_envs = [], [], []
+        for pod_name in pod_names:
+            self.add_agent(pod_name=pod_name)
+
+        print(f"Algorithm set to {algorithm}")
 
         return {"message": f"{algorithm} algorithm set"}
 
@@ -241,6 +256,7 @@ class Application:
                     pending_pods.add(pod_name)
                     print(f"Pending Pods: {pending_pods}")
                 elif pod_phase == "Running":
+                    # For every running pod, this creates appropriate agents
                     try:
                         container = pod.spec.containers[0].name
                         if (
@@ -278,6 +294,8 @@ class Application:
                         print(f"ERROR: Failed to add agent for pod {pod_name}")
             elif event_type == "DELETED":
                 self.remove_agent(pod_name=pod_name)
+                if self.debug:
+                    print(f"Agent removed for pod {pod_name}")
                 self._print_agents()
 
     def start_pod_watcher(self, namespace="default"):
