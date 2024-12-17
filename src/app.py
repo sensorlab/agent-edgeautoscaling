@@ -37,10 +37,11 @@ class Application:
             self.config["target_app_label"].split("=")[1],
             self.config["target_container_name"],
         )
-        
-        print(f"Target App Label: {self.target_app_label}, Target Container Name: {self.target_container_name}")
-        self.envs, self.other_envs, self.agents = [], [], []
 
+        print(
+            f"Target App Label: {self.target_app_label}, Target Container Name: {self.target_container_name}"
+        )
+        self.envs, self.other_envs, self.agents = [], [], []
 
     def _update_other_envs(self):
         if not self.envs:
@@ -244,14 +245,21 @@ class Application:
         self.other_envs = self._update_other_envs()
         return {"message": "Agent added"}
 
-    def remove_agent(self):
+    def remove_agent(self, pod_name=None):
         with self.lock:
             if len(self.envs) > 0:
-                # self.envs[-1].patch(self.envs[-1].MIN_CPU_LIMIT)
-                self.envs.pop(-1)
-                self.agents.pop(-1)
-                self.other_envs = self._update_other_envs()
-                return {"message": "Last agent removed"}
+                if pod_name:
+                    for env, agent in zip(self.envs, self.agents):
+                        if env.pod_name == pod_name:
+                            self.envs.remove(env)
+                            self.agents.remove(agent)
+                            self.other_envs = self._update_other_envs()
+                            return {"message": f"Agent {pod_name} removed"}
+                else:
+                    self.envs.pop(-1)
+                    self.agents.pop(-1)
+                    self.other_envs = self._update_other_envs()
+                    return {"message": "Last agent removed"}
             else:
                 return {"message": "Cannot remove the only agent"}
 
@@ -286,7 +294,7 @@ class Application:
             pod = event["object"]
             pod_name = pod.metadata.name
             pod_phase = pod.status.phase
-     
+
             if event_type == "ADDED":
                 if pod_phase == "Pending":
                     pending_pods.add(pod_name)
@@ -294,20 +302,30 @@ class Application:
                 elif pod_phase == "Running":
                     try:
                         container = pod.spec.containers[0].name
-                        if pod.metadata.labels["app"] == self.target_app_label and container == self.target_container_name:
+                        if (
+                            pod.metadata.labels["app"] == self.target_app_label
+                            and container == self.target_container_name
+                        ):
                             self.add_agent(pod_name=pod_name)
-                            
+
                             self._print_agents()
                     except (KeyError, IndexError):
                         pass
             # When a new pod is created it is in the pending state, so we need to wait for it to be running
             elif event_type == "MODIFIED":
-                if pod_phase == "Running" and pod_name in pending_pods: # check is done to avoid adding the same pod multiple times
-                    retries = 10 # 10 seconds/retries to wait to add the agent for the pod
+                if (
+                    pod_phase == "Running" and pod_name in pending_pods
+                ):  # check is done to avoid adding the same pod multiple times
+                    retries = (
+                        10  # 10 seconds/retries to wait to add the agent for the pod
+                    )
                     while retries > 0:
                         try:
                             container = pod.spec.containers[0].name
-                            if pod.metadata.labels["app"] == self.target_app_label and container == self.target_container_name:
+                            if (
+                                pod.metadata.labels["app"] == self.target_app_label
+                                and container == self.target_container_name
+                            ):
                                 self.add_agent(pod_name=pod_name)
                                 self._print_agents()
                                 pending_pods.remove(pod_name)
@@ -320,7 +338,7 @@ class Application:
                     else:
                         print(f"ERROR: Failed to add agent for pod {pod_name}")
             elif event_type == "DELETED":
-                self.remove_agent()
+                self.remove_agent(pod_name=pod_name)
                 self._print_agents()
 
     def start_pod_watcher(self, namespace="default"):
@@ -329,7 +347,7 @@ class Application:
         )
         self.pod_watcher_thread.start()
         return {"message": "Pod watcher started"}
-    
+
     def _print_agents(self):
         if not self.debug:
             return
