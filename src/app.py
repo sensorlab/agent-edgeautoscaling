@@ -25,8 +25,7 @@ class Application:
         self.resources = 1000
         self.debug = False
         self.action_interval = 1
-        self.current_algorithm = None
-        self.set_dqn()
+        self.set_algorithm("dqn")
         self.infer_thread = None
         self.stop_signal = threading.Event()
         self.lock = threading.Lock()
@@ -128,8 +127,8 @@ class Application:
             print(f"Resources set to {new_resources}")
         return {"message": f"Resources set to {new_resources}"}
 
-    def set_dqn(self):
-        if self.collect_metrics and self.current_algorithm != "dqn":
+    def set_algorithm(self, algorithm):
+        if self.collect_metrics and self.current_algorithm != algorithm:
             pickle.dump(
                 self.deltas_for_alg,
                 open(
@@ -139,67 +138,9 @@ class Application:
             )
             self.deltas_for_alg = []
 
-        # self.envs, self.agents = initialize_agents(
-        #     n_agents=self.n_agents,
-        #     resources=1000,
-        #     tl_agent=2,
-        #     model="trained/dqn/mdqn1000ep1000m25inc2_rf_20rps5.0alpha1000res",
-        #     algorithm="mdqn",
-        #     independent=False,
-        #     priorities=[1.0, 1.0, 1.0],
-        # )
-        self.current_algorithm = "dqn"
-        # self.other_envs = self._update_other_envs()
-        return {"message": "DQN algorithm set"}
+        self.current_algorithm = algorithm
 
-    def set_ppo(self):
-        if self.collect_metrics and self.current_algorithm != "ppo":
-            pickle.dump(
-                self.deltas_for_alg,
-                open(
-                    f"results/generated/scalable_agents/{self.current_algorithm}_deltas.p",
-                    "wb",
-                ),
-            )
-            self.deltas_for_alg = []
-
-        # self.envs, self.agents = initialize_agents(
-        #     n_agents=self.n_agents,
-        #     resources=1000,
-        #     tl_agent=0,
-        #     model="trained/ppo/1000ep_rf_2_20rps10kepochs5alpha10epupdate50scale_a_1000resources",
-        #     algorithm="ppo",
-        #     independent=False,
-        #     priorities=[1.0, 1.0, 1.0],
-        #     scale_action=100,
-        # )
-        self.current_algorithm = "ppo"
-        # self.other_envs = self._update_other_envs()
-        return {"message": "PPO algorithm set"}
-
-    def set_ddpg(self):
-        if self.collect_metrics and self.current_algorithm != "ddpg":
-            pickle.dump(
-                self.deltas_for_alg,
-                open(
-                    f"results/generated/scalable_agents/{self.current_algorithm}_deltas.p",
-                    "wb",
-                ),
-            )
-            self.deltas_for_alg = []
-
-        # self.envs, self.agents = initialize_agents(
-        #     n_agents=self.n_agents,
-        #     resources=1000,
-        #     tl_agent=0,
-        #     model="trained/ddpg/1000ep_2rf_20rps5.0alpha_50scale1000resources",
-        #     algorithm="ddpg",
-        #     independent=False,
-        #     priorities=[1.0, 1.0, 1.0],
-        # )
-        self.current_algorithm = "ddpg"
-        # self.other_envs = self._update_other_envs()
-        return {"message": "DDPG algorithm set"}
+        return {"message": f"{algorithm} algorithm set"}
 
     def add_agent(self, pod_name=None):
         match self.current_algorithm:
@@ -313,12 +254,10 @@ class Application:
                         pass
             # When a new pod is created it is in the pending state, so we need to wait for it to be running
             elif event_type == "MODIFIED":
-                if (
-                    pod_phase == "Running" and pod_name in pending_pods
-                ):  # check is done to avoid adding the same pod multiple times
-                    retries = (
-                        10  # 10 seconds/retries to wait to add the agent for the pod
-                    )
+                # check is done to avoid adding the same pod multiple times
+                if pod_phase == "Running" and pod_name in pending_pods:
+                    # 10 seconds/retries to wait to add the agent for the pod
+                    retries = 10
                     while retries > 0:
                         try:
                             container = pod.spec.containers[0].name
@@ -394,22 +333,22 @@ def set_interval(request: IntervalRequest):
 
 @elasticity_app.post("/set_dqn_algorithm")
 def set_dqn():
-    return app.set_dqn()
+    return app.set_algorithm("dqn")
 
 
 @elasticity_app.post("/set_ppo_algorithm")
 def set_ppo():
-    return app.set_ppo()
+    return app.set_algorithm("ppo")
+
+
+@elasticity_app.post("/set_ddpg_algorithm")
+def set_ddpg():
+    return app.set_algorithm("ddpg")
 
 
 @elasticity_app.post("/set_default_limits")
 def set_default_limits():
     return app.set_default_limits()
-
-
-@elasticity_app.post("/set_ddpg_algorithm")
-def set_ddpg():
-    return app.set_ddpg()
 
 
 @elasticity_app.post("/add_agent")
