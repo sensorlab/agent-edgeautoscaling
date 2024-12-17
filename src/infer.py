@@ -12,7 +12,7 @@ from train_ppo import PPO
 
 
 def initialize_agent(id=None, resources=1000, tl_agent=None, model=None, algorithm='ppo', independent=False,
-                      priority=1.0, scale_action=None):
+                      priority=1.0, scale_action=None, pod_name=None):
     if not model:
         raise ValueError("Please provide a model to load")
     
@@ -30,12 +30,12 @@ def initialize_agent(id=None, resources=1000, tl_agent=None, model=None, algorit
             raise ValueError("Invalid algorithm")
 
     if discrete:
-        env = DiscreteElasticityEnv(id, independent_state=independent)
+        env = DiscreteElasticityEnv(id, independent_state=independent, pod_name=pod_name)
     else:
         if instant:
-            env = InstantContinuousElasticityEnv(id, independent_state=independent)
+            env = InstantContinuousElasticityEnv(id, independent_state=independent, pod_name=pod_name)
         else:
-            env = ContinuousElasticityEnv(id, independent_state=independent)
+            env = ContinuousElasticityEnv(id, independent_state=independent, pod_name=pod_name)
 
     match algorithm:
         case 'ppo' | 'dppo' | 'ippo':

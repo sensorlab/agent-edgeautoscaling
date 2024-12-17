@@ -3,11 +3,15 @@ import time
 import threading
 import pickle
 
+from kubernetes import client, config, watch
+
 from pydantic import BaseModel
 from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
 
 from infer import initialize_agents, initialize_agent
 from envs import set_available_resource, set_other_priorities, set_other_utilization
+from utils import load_config
 
 
 class Application:
@@ -25,10 +29,22 @@ class Application:
         self.set_dqn()
         self.infer_thread = None
         self.stop_signal = threading.Event()
-        self.other_envs = self._update_other_envs()
         self.lock = threading.Lock()
 
+        # Load the configuration and init empty lists for envs, agents and other_envs
+        self.config = load_config()
+        self.target_app_label, self.target_container_name = (
+            self.config["target_app_label"].split("=")[1],
+            self.config["target_container_name"],
+        )
+        
+        print(f"Target App Label: {self.target_app_label}, Target Container Name: {self.target_container_name}")
+        self.envs, self.other_envs, self.agents = [], [], []
+
+
     def _update_other_envs(self):
+        if not self.envs:
+            return []
         return [
             [env for env in self.envs if env != self.envs[i]]
             for i in range(len(self.envs))
@@ -62,7 +78,7 @@ class Application:
                     dones.append(done)
                     if self.debug:
                         print(
-                            f"{self.envs[i].id}: ACTION: {action}, LIMIT: {self.envs[i].ALLOCATED}, "
+                            f"{self.envs[i].pod_name}: ACTION: {action}, LIMIT: {self.envs[i].ALLOCATED}, "
                             f"{self.envs[i].last_cpu_percentage: .2f}%, AVAILABLE: {self.envs[i].AVAILABLE}, "
                             f"reward: {reward} state(limit, usage, others): {self.envs[i].state[-1]}"
                         )
@@ -122,17 +138,17 @@ class Application:
             )
             self.deltas_for_alg = []
 
-        self.envs, self.agents = initialize_agents(
-            n_agents=self.n_agents,
-            resources=1000,
-            tl_agent=2,
-            model="trained/dqn/mdqn1000ep1000m25inc2_rf_20rps5.0alpha1000res",
-            algorithm="mdqn",
-            independent=False,
-            priorities=[1.0, 1.0, 1.0],
-        )
+        # self.envs, self.agents = initialize_agents(
+        #     n_agents=self.n_agents,
+        #     resources=1000,
+        #     tl_agent=2,
+        #     model="trained/dqn/mdqn1000ep1000m25inc2_rf_20rps5.0alpha1000res",
+        #     algorithm="mdqn",
+        #     independent=False,
+        #     priorities=[1.0, 1.0, 1.0],
+        # )
         self.current_algorithm = "dqn"
-        self.other_envs = self._update_other_envs()
+        # self.other_envs = self._update_other_envs()
         return {"message": "DQN algorithm set"}
 
     def set_ppo(self):
@@ -146,18 +162,18 @@ class Application:
             )
             self.deltas_for_alg = []
 
-        self.envs, self.agents = initialize_agents(
-            n_agents=self.n_agents,
-            resources=1000,
-            tl_agent=0,
-            model="trained/ppo/1000ep_rf_2_20rps10kepochs5alpha10epupdate50scale_a_1000resources",
-            algorithm="ppo",
-            independent=False,
-            priorities=[1.0, 1.0, 1.0],
-            scale_action=100,
-        )
+        # self.envs, self.agents = initialize_agents(
+        #     n_agents=self.n_agents,
+        #     resources=1000,
+        #     tl_agent=0,
+        #     model="trained/ppo/1000ep_rf_2_20rps10kepochs5alpha10epupdate50scale_a_1000resources",
+        #     algorithm="ppo",
+        #     independent=False,
+        #     priorities=[1.0, 1.0, 1.0],
+        #     scale_action=100,
+        # )
         self.current_algorithm = "ppo"
-        self.other_envs = self._update_other_envs()
+        # self.other_envs = self._update_other_envs()
         return {"message": "PPO algorithm set"}
 
     def set_ddpg(self):
@@ -171,20 +187,20 @@ class Application:
             )
             self.deltas_for_alg = []
 
-        self.envs, self.agents = initialize_agents(
-            n_agents=self.n_agents,
-            resources=1000,
-            tl_agent=0,
-            model="trained/ddpg/1000ep_2rf_20rps5.0alpha_50scale1000resources",
-            algorithm="ddpg",
-            independent=False,
-            priorities=[1.0, 1.0, 1.0],
-        )
+        # self.envs, self.agents = initialize_agents(
+        #     n_agents=self.n_agents,
+        #     resources=1000,
+        #     tl_agent=0,
+        #     model="trained/ddpg/1000ep_2rf_20rps5.0alpha_50scale1000resources",
+        #     algorithm="ddpg",
+        #     independent=False,
+        #     priorities=[1.0, 1.0, 1.0],
+        # )
         self.current_algorithm = "ddpg"
-        self.other_envs = self._update_other_envs()
+        # self.other_envs = self._update_other_envs()
         return {"message": "DDPG algorithm set"}
 
-    def add_agent(self):
+    def add_agent(self, pod_name=None):
         match self.current_algorithm:
             case "ppo":
                 new_env, new_agent = initialize_agent(
@@ -196,6 +212,7 @@ class Application:
                     independent=False,
                     priority=1.0,
                     scale_action=100,
+                    pod_name=pod_name,
                 )
             case "dqn":
                 new_env, new_agent = initialize_agent(
@@ -206,6 +223,7 @@ class Application:
                     algorithm="mdqn",
                     independent=False,
                     priority=1.0,
+                    pod_name=pod_name,
                 )
             case "ddpg":
                 new_env, new_agent = initialize_agent(
@@ -216,6 +234,7 @@ class Application:
                     algorithm="ddpg",
                     independent=False,
                     priority=1.0,
+                    pod_name=pod_name,
                 )
             case _:
                 return {"message": "No algorithm set"}
@@ -227,8 +246,8 @@ class Application:
 
     def remove_agent(self):
         with self.lock:
-            if len(self.envs) > 1:
-                self.envs[-1].patch(self.envs[-1].MIN_CPU_LIMIT)
+            if len(self.envs) > 0:
+                # self.envs[-1].patch(self.envs[-1].MIN_CPU_LIMIT)
                 self.envs.pop(-1)
                 self.agents.pop(-1)
                 self.other_envs = self._update_other_envs()
@@ -255,8 +274,72 @@ class Application:
             env.patch(env.MIN_CPU_LIMIT)
         return {"message": "Default limits set"}
 
+    # Event loop to watch for new pods and add agents
+    def watch_pods(self, namespace="default"):
+        config.load_kube_config()
+        v1 = client.CoreV1Api()
+        w = watch.Watch()
+        pending_pods = set()
+
+        for event in w.stream(v1.list_namespaced_pod, namespace=namespace):
+            event_type = event["type"]
+            pod = event["object"]
+            pod_name = pod.metadata.name
+            pod_phase = pod.status.phase
+     
+            if event_type == "ADDED":
+                if pod_phase == "Pending":
+                    pending_pods.add(pod_name)
+                    print(f"Pending Pods: {pending_pods}")
+                elif pod_phase == "Running":
+                    try:
+                        container = pod.spec.containers[0].name
+                        if pod.metadata.labels["app"] == self.target_app_label and container == self.target_container_name:
+                            self.add_agent(pod_name=pod_name)
+                            
+                            self._print_agents()
+                    except (KeyError, IndexError):
+                        pass
+            elif event_type == "MODIFIED":
+                if pod_phase == "Running" and pod_name in pending_pods: # check is done to avoid adding the same pod multiple times
+                    retries = 10 # 10 seconds to wait to add the agent for the pod
+                    while retries > 0:
+                        try:
+                            container = pod.spec.containers[0].name
+                            if pod.metadata.labels["app"] == self.target_app_label and container == self.target_container_name:
+                                self.add_agent(pod_name=pod_name)
+                                self._print_agents()
+                                pending_pods.remove(pod_name)
+                                print(f"Pending Pods: {pending_pods}")
+                                break
+                        except (KeyError, IndexError) as e:
+                            print(f"Error: {e}, retrying...")
+                            retries -= 1
+                            time.sleep(1)
+                    else:
+                        print(f"ERROR: Failed to add agent for pod {pod_name}")
+            elif event_type == "DELETED":
+                self.remove_agent()
+                self._print_agents()
+
+    def start_pod_watcher(self, namespace="default"):
+        self.pod_watcher_thread = threading.Thread(
+            target=self.watch_pods, args=(namespace,)
+        )
+        self.pod_watcher_thread.start()
+        return {"message": "Pod watcher started"}
+    
+    def _print_agents(self):
+        if not self.debug:
+            return
+        print("CURRENT LIST OF AGENTS:", end=" ")
+        for env in self.envs:
+            print(f"Agent ID: {env.id}, Pod Name: {env.pod_name}", end=", ")
+        print()
+
 
 app = Application()
+app.start_pod_watcher()
 elasticity_app = FastAPI()
 
 
@@ -344,3 +427,23 @@ def get_resources():
 @elasticity_app.get("/interval")
 def get_interval():
     return {"interval": app.action_interval}
+
+
+def custom_openapi():
+    if elasticity_app.openapi_schema:
+        return elasticity_app.openapi_schema
+    openapi_schema = get_openapi(
+        title="Custom title",
+        version="2.5.0",
+        summary="This is a very custom OpenAPI schema",
+        description="Here's a longer description of the custom **OpenAPI** schema",
+        routes=elasticity_app.routes,
+    )
+    openapi_schema["info"]["x-logo"] = {
+        "url": "https://fastapi.tiangolo.com/img/logo-margin/logo-teal.png"
+    }
+    elasticity_app.openapi_schema = openapi_schema
+    return elasticity_app.openapi_schema
+
+
+elasticity_app.openapi = custom_openapi
