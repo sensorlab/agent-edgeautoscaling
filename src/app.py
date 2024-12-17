@@ -275,8 +275,8 @@ class Application:
         return {"message": "Default limits set"}
 
     # Event loop to watch for new pods and add agents
-    def watch_pods(self, namespace="default"):
-        config.load_kube_config()
+    def _watch_pods(self, namespace="default"):
+        config.load_kube_config() if self.debug else config.load_incluster_config()
         v1 = client.CoreV1Api()
         w = watch.Watch()
         pending_pods = set()
@@ -300,9 +300,10 @@ class Application:
                             self._print_agents()
                     except (KeyError, IndexError):
                         pass
+            # When a new pod is created it is in the pending state, so we need to wait for it to be running
             elif event_type == "MODIFIED":
                 if pod_phase == "Running" and pod_name in pending_pods: # check is done to avoid adding the same pod multiple times
-                    retries = 10 # 10 seconds to wait to add the agent for the pod
+                    retries = 10 # 10 seconds/retries to wait to add the agent for the pod
                     while retries > 0:
                         try:
                             container = pod.spec.containers[0].name
@@ -324,7 +325,7 @@ class Application:
 
     def start_pod_watcher(self, namespace="default"):
         self.pod_watcher_thread = threading.Thread(
-            target=self.watch_pods, args=(namespace,)
+            target=self._watch_pods, args=(namespace,)
         )
         self.pod_watcher_thread.start()
         return {"message": "Pod watcher started"}
@@ -339,6 +340,7 @@ class Application:
 
 
 app = Application()
+# Start the pod watcher thread by default as we use it for creation and removal of agents
 app.start_pod_watcher()
 elasticity_app = FastAPI()
 

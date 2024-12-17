@@ -13,10 +13,7 @@ from node import Node
 # returns list(nodes) from the connected cluster
 def init_nodes(debug=False, custom_label='type=ray'):
     nodes = []
-    if debug:
-        config.load_kube_config()
-    else:
-        config.load_incluster_config()
+    config.load_kube_config() if debug else config.load_incluster_config()
     v1 = client.CoreV1Api()
 
     ret = v1.list_pod_for_all_namespaces(label_selector='name=cadvisor')

@@ -44,10 +44,7 @@ class Node:
         if reset_containers:
             self.containers = dict()
 
-        if debug:
-            config.load_kube_config()
-        else:
-            config.load_incluster_config()
+        config.load_kube_config() if debug else config.load_incluster_config()
         v1 = client.CoreV1Api()
 
         try:
