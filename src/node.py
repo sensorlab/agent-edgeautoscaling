@@ -75,10 +75,10 @@ class Node:
             if container:
                 # tweak the comparable metrics to -3 for more accurate metric
                 current_cpu_usage_nanoseconds = container["stats"][-1]["cpu"]["usage"]["total"]
-                previous_cpu_usage_nanoseconds = container["stats"][-3]["cpu"]["usage"]["total"]
+                previous_cpu_usage_nanoseconds = container["stats"][-2]["cpu"]["usage"]["total"]
 
                 current_timestamp_str = container["stats"][-1]["timestamp"].split('.')[0] + 'Z'
-                previous_timestamp_str = container["stats"][-3]["timestamp"].split('.')[0] + 'Z'
+                previous_timestamp_str = container["stats"][-2]["timestamp"].split('.')[0] + 'Z'
 
                 current_timestamp = datetime.strptime(current_timestamp_str, "%Y-%m-%dT%H:%M:%SZ")
                 previous_timestamp = datetime.strptime(previous_timestamp_str, "%Y-%m-%dT%H:%M:%SZ")
@@ -105,7 +105,7 @@ class Node:
                 network_rx_per_second_mb, network_tx_per_second_mb = self.get_throughput(time_interval_seconds)
 
                 throttled = container['stats'][-1]['cpu']['cfs']['throttled_time'] > \
-                            container['stats'][-3]['cpu']['cfs']['throttled_time']
+                            container['stats'][-2]['cpu']['cfs']['throttled_time']
 
                 return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (
                     memory_limit_bytes / (1024 * 1024), memory_usage_megabytes, memory_usage_percentage), (
