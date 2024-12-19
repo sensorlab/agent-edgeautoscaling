@@ -53,9 +53,13 @@ log "Installing Prometheus stack for monitoring"
 microk8s helm install stack prometheus-community/kube-prometheus-stack --namespace metrics --values configs/prometheus_stack/values.yaml
 
 log "Deploying localization services"
-microk8s kubectl apply -f configs/localization/separate_services.yaml
+microk8s kubectl apply -f configs/localization/deployment_config.yaml
 
 log "Deploying elasticity module"
 microk8s kubectl apply -f configs/elasticity_module/deployment.yaml
 
 log "Deployment completed successfully"
+
+log "Getting the ingress endpoint for the container running on port 80"
+EXTERNAL_PORT=$(microk8s kubectl get svc ingress-nginx-controller -n default -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
+log "External Port for connection of thet Frontend: $EXTERNAL_PORT"
