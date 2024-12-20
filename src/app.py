@@ -2,6 +2,7 @@ import numpy as np
 import time
 import threading
 import pickle
+import gc
 
 from kubernetes import client, config, watch
 
@@ -209,11 +210,17 @@ class Application:
                         if env.pod_name == pod_name:
                             self.envs.remove(env)
                             self.agents.remove(agent)
+                            del env
+                            del agent
+                            gc.collect()
                             self.other_envs = self._update_other_envs()
                             return {"message": f"Agent {pod_name} removed"}
                 else:
-                    self.envs.pop(-1)
-                    self.agents.pop(-1)
+                    env = self.envs.pop(-1)
+                    agent = self.agents.pop(-1)
+                    del env
+                    del agent
+                    gc.collect()
                     self.other_envs = self._update_other_envs()
                     return {"message": "Last agent removed"}
             else:
@@ -226,8 +233,11 @@ class Application:
                     self.envs[0].MIN_CPU_LIMIT
                 )  # Reset the first agent to its initial state
                 self.first_agent_delta = self.envs[0].cummulative_delta
-                self.envs.pop(0)
-                self.agents.pop(0)
+                env = self.envs.pop(0)
+                agent = self.agents.pop(0)
+                del env
+                del agent
+                gc.collect()
                 self.other_envs = self._update_other_envs()
                 return {"message": "First agent removed"}
             else:
@@ -406,14 +416,14 @@ def get_interval():
     return {"interval": app.action_interval}
 
 
-def custom_openapi():
+def elasticity_openapi():
     if elasticity_app.openapi_schema:
         return elasticity_app.openapi_schema
     openapi_schema = get_openapi(
-        title="Custom title",
-        version="2.5.0",
-        summary="This is a very custom OpenAPI schema",
-        description="Here's a longer description of the custom **OpenAPI** schema",
+        title="Kubernetes Elasticity Backend",
+        version="0.1.0",
+        summary="This is the backend for the MARLISE (Multi-Agent Reinforcement Learning-based In-place Scaling Engine).",
+        description="Works with three different DRL algorithms in a mulit-agent setup to scale Kubernetes deployments/pods.",
         routes=elasticity_app.routes,
     )
     openapi_schema["info"]["x-logo"] = {
@@ -423,4 +433,4 @@ def custom_openapi():
     return elasticity_app.openapi_schema
 
 
-elasticity_app.openapi = custom_openapi
+elasticity_app.openapi = elasticity_openapi
