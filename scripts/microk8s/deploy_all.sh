@@ -62,4 +62,9 @@ log "Deployment completed successfully"
 
 log "Getting the ingress endpoint for the container running on port 80"
 EXTERNAL_PORT=$(microk8s kubectl get svc ingress-nginx-controller -n default -o jsonpath='{.spec.ports[?(@.port==80)].nodePort}')
-log "External Port for connection of thet Frontend: $EXTERNAL_PORT"
+log "External Port for debug connection of thet Frontend: $EXTERNAL_PORT"
+
+log "Deploying frontend"
+microk8s kubectl apply -f configs/frontend/deployment.yaml
+
+log "Finished deploying system"
