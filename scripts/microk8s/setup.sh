@@ -6,10 +6,6 @@ log() {
     echo "$(date +"%Y-%m-%d %H:%M:%S") - $1"
 }
 
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
-}
-
 if [ "$EUID" -ne 0 ]; then
     log "Please run as root or use sudo"
     exit 1

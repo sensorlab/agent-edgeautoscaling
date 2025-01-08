@@ -52,6 +52,9 @@ microk8s kubectl create namespace metrics || true
 log "Installing Prometheus stack for monitoring"
 microk8s helm install stack prometheus-community/kube-prometheus-stack --namespace metrics --values configs/prometheus_stack/values.yaml
 
+log "Sleeping for 30 seconds before proceeding"
+sleep 30
+
 log "Deploying localization services"
 microk8s kubectl apply -f configs/localization/deployment_config.yaml
 
