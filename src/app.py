@@ -22,9 +22,8 @@ class Application:
         self.deltas_for_alg = []
         self.first_agent_delta = 0
 
-        self.n_agents = 3
+        # Default values for BE
         self.resources = 1000
-        self.debug = False
         self.action_interval = 1
         self.current_algorithm = "dqn"
         self.infer_thread = None
@@ -33,6 +32,7 @@ class Application:
 
         # Load the configuration and init empty lists for envs, agents and other_envs
         self.config = load_config()
+        self.debug = self.config["debug_deployment"]
         self.target_app_label, self.target_container_name = (
             self.config["target_app_label"].split("=")[1],
             self.config["target_container_name"],
@@ -255,58 +255,64 @@ class Application:
         w = watch.Watch()
         pending_pods = set()
 
-        for event in w.stream(v1.list_namespaced_pod, namespace=namespace):
-            event_type = event["type"]
-            pod = event["object"]
-            pod_name = pod.metadata.name
-            pod_phase = pod.status.phase
+        while True:
+            try:
+                for event in w.stream(v1.list_namespaced_pod, namespace=namespace):
+                    event_type = event["type"]
+                    pod = event["object"]
+                    pod_name = pod.metadata.name
+                    pod_phase = pod.status.phase
 
-            if event_type == "ADDED":
-                if pod_phase == "Pending":
-                    pending_pods.add(pod_name)
-                    print(f"Pending Pods: {pending_pods}")
-                elif pod_phase == "Running":
-                    # For every running pod, this creates appropriate agents
-                    try:
-                        container = pod.spec.containers[0].name
-                        if (
-                            pod.metadata.labels["app"] == self.target_app_label
-                            and container == self.target_container_name
-                        ):
-                            self.add_agent(pod_name=pod_name)
+                    if event_type == "ADDED":
+                        if pod_phase == "Pending":
+                            pending_pods.add(pod_name)
+                            print(f"Pending Pods: {pending_pods}")
+                        elif pod_phase == "Running":
+                            # For every running pod, this creates appropriate agents
+                            try:
+                                container = pod.spec.containers[0].name
+                                if (
+                                    pod.metadata.labels["app"] == self.target_app_label
+                                    and container == self.target_container_name
+                                ):
+                                    self.add_agent(pod_name=pod_name)
 
-                            self._print_agents()
-                    except (KeyError, IndexError):
-                        pass
-            # When a new pod is created it is in the pending state, so we need to wait for it to be running
-            elif event_type == "MODIFIED":
-                # check is done to avoid adding the same pod multiple times
-                if pod_phase == "Running" and pod_name in pending_pods:
-                    # 10 seconds/retries to wait to add the agent for the pod
-                    retries = 10
-                    while retries > 0:
-                        try:
-                            container = pod.spec.containers[0].name
-                            if (
-                                pod.metadata.labels["app"] == self.target_app_label
-                                and container == self.target_container_name
-                            ):
-                                self.add_agent(pod_name=pod_name)
-                                self._print_agents()
-                                pending_pods.remove(pod_name)
-                                print(f"Pending Pods: {pending_pods}")
-                                break
-                        except (KeyError, IndexError) as e:
-                            print(f"Error: {e}, retrying...")
-                            retries -= 1
-                            time.sleep(1)
-                    else:
-                        print(f"ERROR: Failed to add agent for pod {pod_name}")
-            elif event_type == "DELETED":
-                self.remove_agent(pod_name=pod_name)
-                if self.debug:
-                    print(f"Agent removed for pod {pod_name}")
-                self._print_agents()
+                                    self._print_agents()
+                            except (KeyError, IndexError):
+                                pass
+                    # When a new pod is created it is in the pending state, so we need to wait for it to be running
+                    elif event_type == "MODIFIED":
+                        # check is done to avoid adding the same pod multiple times
+                        if pod_phase == "Running" and pod_name in pending_pods:
+                            # 10 seconds/retries to wait to add the agent for the pod
+                            retries = 10
+                            while retries > 0:
+                                try:
+                                    container = pod.spec.containers[0].name
+                                    if (
+                                        pod.metadata.labels["app"]
+                                        == self.target_app_label
+                                        and container == self.target_container_name
+                                    ):
+                                        self.add_agent(pod_name=pod_name)
+                                        self._print_agents()
+                                        pending_pods.remove(pod_name)
+                                        print(f"Pending Pods: {pending_pods}")
+                                        break
+                                except (KeyError, IndexError) as e:
+                                    print(f"Error: {e}, retrying...")
+                                    retries -= 1
+                                    time.sleep(1)
+                            else:
+                                print(f"ERROR: Failed to add agent for pod {pod_name}")
+                    elif event_type == "DELETED":
+                        self.remove_agent(pod_name=pod_name)
+                        if self.debug:
+                            print(f"Agent removed for pod {pod_name}")
+                        self._print_agents()
+            except Exception as e:
+                print(f"Error: {e}")
+                time.sleep(5)
 
     def start_pod_watcher(self, namespace="default"):
         self.pod_watcher_thread = threading.Thread(
