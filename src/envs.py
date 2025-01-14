@@ -30,6 +30,7 @@ class BaseElasticityEnv(Env):
         self.debug_deployment = config['debug_deployment']
         nodes = init_nodes(debug=self.debug_deployment, custom_label=self.app_label)
 
+        self.node, self.container_id = None, None
         self.id = id
         for node in nodes:
             for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
@@ -38,6 +39,8 @@ class BaseElasticityEnv(Env):
                     self.container_id = container_id
                     self.node = node
                     break
+        if not self.node or not self.container_id:
+            raise ValueError(f"Pod {self.pod_name} not found in the cluster")
         # print(f"Initialized Env {self.id} with {self.node}")
 
         # Initialized allocated resources of how much current does the pod have
@@ -274,8 +277,8 @@ class ContinuousElasticityEnv(BaseElasticityEnv):
 
 
 class InstantContinuousElasticityEnv(BaseElasticityEnv):
-    def __init__(self, id, independent_state=False):
-        super().__init__(id, independent_state=independent_state)
+    def __init__(self, id, independent_state=False, pod_name=None):
+        super().__init__(id, independent_state=independent_state, pod_name=pod_name)
         self.action_space = spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
 
     def step(self, action, rf):
