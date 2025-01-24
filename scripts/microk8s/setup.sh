@@ -27,6 +27,7 @@ sudo snap install microk8s --classic --channel=1.28
 
 log "Activating feature gate for InPlacePodVerticalScaling"
 echo "--feature-gates=InPlacePodVerticalScaling=true" | sudo tee -a /var/snap/microk8s/current/args/kube-apiserver
+echo "--feature-gates=InPlacePodVerticalScaling=true" | sudo tee -a /var/snap/microk8s/current/args/kubelet
 
 log "Restarting microk8s to apply changes"
 /snap/bin/microk8s stop
