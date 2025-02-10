@@ -11,7 +11,7 @@ from utils import init_nodes
 from spam_cluster import get_response_times
 from pod_controller import get_loadbalancer_external_port, set_container_cpu_values
 from infer import infer, initialize_agents
-from threshold_elasticity import run_thold_elasticity
+from thold_eval import run_thold_elasticity
 
 
 '''
