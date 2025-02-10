@@ -15,8 +15,9 @@ Scripts are meant to run from the project root folder.
 
 #### Feature Gates
 
-- Usage of InPlacePodVerticalScaling feature gate is required for certain functionalities.
+- Usage of InPlacePodVerticalScaling feature gate is required for agent functionalities to ensure seamless scaling.
 
+Example:
 ```
 kubectl patch pod localization-api1 --patch '{"spec":{"containers":[{"name":"localization-api", "resources":{"requests":{"cpu":"500m"}, "limits":{"cpu":"500m"}}}]}}'
 ```
@@ -31,7 +32,7 @@ kubectl patch pod localization-api1 --patch '{"spec":{"containers":[{"name":"loc
 
 ## Installation of Cluster
 
-To set up the cluster, run the following script:
+To install the `microk8s` container orchestration platform, run the following script on every node:
 
 ```bash
 sudo bash scripts/microk8s/setup.sh
@@ -89,7 +90,9 @@ Three multi-agent reinforcement learning algorithms are supported:
 Avaialbe as a [Docker image](https://hub.docker.com/repository/docker/wrathchild14/elasticity/general)
 or run locally, refer to [other readme](/src/readme.md).
 
-### API Endpoints that are currently supported
+The Backend handles the elasticity by itself, but offers API intreface for control and information about the system.
+
+### API Endpoints that are supported
 | Endpoint                | Method | Description                                      | Request Body                                                                 | Response                                                                 |
 |-------------------------|--------|--------------------------------------------------|------------------------------------------------------------------------------|--------------------------------------------------------------------------|
 | `/start`                | POST   | Starts the inference process                     | None                                                                         | `{ "message": "Inference started" }`                                     |
@@ -98,15 +101,17 @@ or run locally, refer to [other readme](/src/readme.md).
 | `/set_interval`         | POST   | Sets the interval between actions                | `{ "interval": int }`                                                        | `{ "message": "Interval set to {interval}" }`                            |
 | `/set_dqn_algorithm`    | POST   | Sets the algorithm to DQN                        | None                                                                         | `{ "message": "DQN algorithm set" }`                                     |
 | `/set_ppo_algorithm`    | POST   | Sets the algorithm to PPO                        | None                                                                         | `{ "message": "PPO algorithm set" }`                                     |
+| `/set_ddpg_algorithm`   | POST   | Sets the algorithm to DDPG                       | None                                                                         | `{ "message": "DDPG algorithm set" }`                                    |
+| `/set_default_limits`   | POST   | Sets the default CPU limits                      | None                                                                         | `{ "message": "Default limits set" }`                                    |
 | `/status`               | GET    | Gets the status of the inference process         | None                                                                         | `{ "status": bool }`                                                     |
-| `/algorithm`            | GET    | Gets the current algorithm being used            | None                                                                         | `{"algorithm": "ppo", "dqn"}`                                         |
+| `/algorithm`            | GET    | Gets the current algorithm being used            | None                                                                         | `{ "algorithm": "ppo" OR "dqn" OR "ddpg" }`                              |
 | `/resources`            | GET    | Gets the current maximum CPU resources           | None                                                                         | `{ "resources": int }`                                                   |
 | `/interval`             | GET    | Gets the current action interval                 | None                                                                         | `{ "interval": int }`                                                    |
 
 
 ## Frontend
 
-For the frontend, refer to the following repository:
+For the frontend that is connected to the above aforementioned Backend, refer to the following repository:
 - [Resource Elasticity Nancy Visualization](https://github.com/wrathchild14/resource-elastisity-nancy-visualization/)
 
 ## Notes
