@@ -77,6 +77,7 @@ class BaseElasticityEnv(Env):
         self.UPPER_CPU = config['upper_cpu']
         self.LOWER_CPU = config['lower_cpu']
 
+        # Field for evaluation of how much resources have been changed
         self.cummulative_delta = 0
 
     def norm_cpu(self, cpu_usage):
@@ -90,13 +91,11 @@ class BaseElasticityEnv(Env):
         n_cpu_limit, n_cpu = self.norm_cpu(cpu_limit), self.norm_cpu(cpu)
 
         available_normed = self.norm_cpu(self.AVAILABLE)
-        # state = [n_cpu_limit, n_cpu, available_normed]
         if self.independent_state:
             state = [n_cpu_limit, n_cpu, available_normed, cpu_percentage / 100, self.priority]
         else:
             state = [n_cpu_limit, n_cpu, available_normed, cpu_percentage / 100, self.other_util / 100, self.priority,
                      self.other_priorities]
-        # state = [n_cpu_limit, n_cpu, available_normed, self.last_cpu_percentage / 100]
 
         self.states_fifo.append(state)
         self.states_fifo.pop(0)
@@ -151,16 +150,6 @@ class BaseElasticityEnv(Env):
                 return reward
         return reward
 
-        # if self.dqn_reward:
-        #     if self.last_cpu_percentage < self.LOWER_CPU:
-        #         # usage_penalty = 1.3 - self.last_cpu_percentage / 100
-        #         usage_penalty = 0.75 - self.last_cpu_percentage / 100 # lower penalty on this
-        #     elif self.last_cpu_percentage > self.UPPER_CPU:
-        #         usage_penalty = self.last_cpu_percentage / 100
-        #     else:
-        #         usage_penalty = 0
-        #     reward = - usage_penalty
-
 
 class FiveDiscreteElasticityEnv(BaseElasticityEnv):
     def __init__(self, id, independent_state=False, pod_name=None):
@@ -207,7 +196,7 @@ class ElevenDiscrElasticityEnv(FiveDiscreteElasticityEnv):
 class DiscreteElasticityEnv(BaseElasticityEnv):
     '''
     Discrete action space enviroment for a microservice.
-    It works with 3 actions: decrease resources, keep resources, increase resources.
+    It works with 3 fixed increment actions: decrease resources, keep resources, increase resources.
     '''
     def __init__(self, id, independent_state=False, pod_name=None):
         super().__init__(id, independent_state=independent_state, pod_name=pod_name)
@@ -270,8 +259,6 @@ class ContinuousElasticityEnv(BaseElasticityEnv):
                 patch_pod(self.pod_name, cpu_request=f"{new_resource_limit}m", cpu_limit=f"{new_resource_limit}m",
                         container_name=self.container_name, debug=self.debug_deployment)
                 self.cummulative_delta += abs(scale_action.item())
-
-        # print(self.cummulative_delta)
 
         reward = self.calculate_agent_reward(rf)
 

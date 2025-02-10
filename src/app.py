@@ -16,6 +16,11 @@ from utils import load_config
 
 
 class Application:
+    """
+    Backend application for MARLISE, it manages the agents and the environments.
+    It dynamically adds and removes agents based on the replicas deployed in the target deployment.
+    It also provides API endpoints to control the agents and the environments.
+    """
     def __init__(self):
         # Metrics collection, turn on to collect resoruce changes for each agent
         self.collect_metrics = False
