@@ -24,11 +24,11 @@ class Node:
     __str__():
         Returns a string representation of the Node object.
     update_containers(debug=False, custom_label='app=localization'):
-        Updates the containers running on the node based on the specified label.
+        Updates the container objects running on the node pointer based on the specified label.
     get_containers():
         Returns the dictionary of containers.
     get_container_usage(container_id):
-        Retrieves the CPU usage statistics for a specific container.
+        Retrieves the resource usage metrics for a specific container.
     """
 
     def __init__(self, name, ca_ip, ip):

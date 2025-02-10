@@ -6,6 +6,13 @@ from utils import init_nodes, load_config
 
 
 class BaseElasticityEnv(Env):
+    '''
+    BaseElasticityEnv is a custom environment for managing the elasticity of containerized applications.
+    It can be inherited to create different types of environments with different action spaces and configurations.
+
+    By default it has history of 6 states and uses the reward function 2, which empirically has shown to work the best.
+    Each microservice has its own enivorment, and the environment is created with the pod_name of the microservice.
+    '''
     def __init__(self, id, independent_state=False, pod_name=None):
         super().__init__()
         config = load_config()
@@ -198,6 +205,10 @@ class ElevenDiscrElasticityEnv(FiveDiscreteElasticityEnv):
         
 
 class DiscreteElasticityEnv(BaseElasticityEnv):
+    '''
+    Discrete action space enviroment for a microservice.
+    It works with 3 actions: decrease resources, keep resources, increase resources.
+    '''
     def __init__(self, id, independent_state=False, pod_name=None):
         super().__init__(id, independent_state=independent_state, pod_name=pod_name)
         self.action_space = spaces.Discrete(3)
@@ -238,6 +249,10 @@ class DiscreteElasticityEnv(BaseElasticityEnv):
 
 
 class ContinuousElasticityEnv(BaseElasticityEnv):
+    '''
+    Continuous action space enviroment for a microservice.
+    It works with a continuous action space, where the agent can increase or decrease the resources by a configurable scaling factor.
+    '''
     def __init__(self, id, independent_state=False, pod_name=None):
         super().__init__(id, independent_state=independent_state, pod_name=pod_name)
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
