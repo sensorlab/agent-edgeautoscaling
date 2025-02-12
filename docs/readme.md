@@ -52,6 +52,8 @@ Deploy the necessary configurations and the use-case service of localization:
 sudo bash scripts/microk8s/deploy_all.sh
 ```
 
+More info in [demo readme](/docs/demo_setup.md).
+
 ## Inference
 
 To run the inference script, use the following command:
