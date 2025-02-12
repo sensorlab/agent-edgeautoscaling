@@ -1,6 +1,6 @@
-# Kubernetes Configuration Setup
+# Back-End configuration setup
 
-To use the Python client for Kubernetes, you need to load the correct credentials and cluster information for the master node.
+The application uses the Python client for Kubernetes and to use it, the correct credentials and cluster information for the master node have to be loaded.
 
 ### k3s
 

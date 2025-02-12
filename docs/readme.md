@@ -81,9 +81,9 @@ options:
 
 ## Training
 
-Three multi-agent reinforcement learning algorithms are supported:
+Three multi-agent deep reinforcement learning algorithms are supported:
 - DQN: Actions are {increase, maintain, decrease}
-- PPO: Outputs a continuous number [-1, 1], scaled and applied. Can also be discrete like DQN.
+- PPO: Outputs a continuous number [-1, 1], scaled and applied. Can also use discrete actions.
 - DDPG: Similar to PPO, outputs a continuous number.
 
 ## Application Backend
