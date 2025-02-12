@@ -30,11 +30,6 @@ if __name__ == "__main__":
     second_loads = [0.24550783, 0.72418413, 0.03030803]
     third_loads = [0.47402381, 0.07211604, 0.45386015]
 
-    # Every algorithm has the same loading for the one iteration
-    # first_loads = [np.random.dirichlet(np.ones(apis), size=1)[0] for _ in range(num_iterations)]
-    # second_loads = [np.random.dirichlet(np.ones(apis), size=1)[0] for _ in range(num_iterations)]
-    # third_loads = [np.random.dirichlet(np.ones(apis), size=1)[0] for _ in range(num_iterations)]
-
     folder_path = f'results/generated/load/monte_carlo_{num_iterations}'
     # folder_path = f'results/experiment_j/load_testing_200ep/monte_carlo_{num_iterations}'
     os.makedirs(folder_path, exist_ok=True)
@@ -249,9 +244,6 @@ if __name__ == "__main__":
     for alg in algorithms:
         print(alg, np.mean(np.array(list(mean_rts_alg[str(alg)].values())).flatten()))
     
-
-
-
     # Saving the data to the specified files
     pickle.dump(mean_crec_alg, open(os.path.join(folder_path, 'mean_crec_alg.p'), 'wb'))
     pickle.dump(mean_rts_alg, open(os.path.join(folder_path, 'mean_rts_alg.p'), 'wb'))
@@ -261,8 +253,4 @@ if __name__ == "__main__":
 
     pickle.dump(all_response_times, open(os.path.join(folder_path, 'all_response_times.p'), 'wb'))
 
-    # pickle.dump(mean_crec_alg, open('results/generated/monte_carlo_10/mean_crec_alg.p', 'wb'))
-    # pickle.dump(mean_rts_alg, open('results/generated/monte_carlo_10/mean_rts_alg.p', 'wb'))
-    # pickle.dump(deltas_0, open('results/generated/monte_carlo_10/deltas_0.p', 'wb'))
-    # pickle.dump(deltas_1, open('results/generated/monte_carlo_10/deltas_1.p', 'wb'))
-    # pickle.dump(deltas_2, open('results/generated/monte_carlo_10/deltas_2.p', 'wb'))
+    print(f"Results for {num_iterations} over {recordings} saved in {folder_path}")

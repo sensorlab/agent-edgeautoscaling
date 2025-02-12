@@ -14,7 +14,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from tqdm import tqdm
 
-from envs import DiscreteElasticityEnv, set_available_resource, set_other_priorities, set_other_utilization
+from envs import (DiscreteElasticityEnv, FiveDiscreteElasticityEnv, ElevenDiscrElasticityEnv, 
+                  set_available_resource, set_other_priorities, set_other_utilization)
 from pod_controller import set_container_cpu_values, get_loadbalancer_external_port
 from spam_cluster import get_response_times
 from utils import save_training_data
@@ -26,7 +27,6 @@ class ReplayMemory(object):
         self.memory = deque([], maxlen=capacity)
 
     def push(self, *args):
-        """Save a transition"""
         self.memory.append(Transition(*args))
 
     def sample(self, batch_size):
@@ -45,8 +45,6 @@ class DQN(nn.Module):
         self.layer3 = nn.Linear(hidden_size * 2, hidden_size)
         self.layer4 = nn.Linear(hidden_size, n_actions)
 
-    # Called with either one element to determine next action, or a batch
-    # during optimization. Returns tensor([[left0exp,right0exp]...]).
     def forward(self, x):
         x = F.relu(self.layer1(x))
         x = F.relu(self.layer2(x))
@@ -122,9 +120,7 @@ class DQNAgent:
         self.steps_done += 1
         if sample > eps_threshold:
             with torch.no_grad():
-                # t.max(1) will return the largest column value of each row.
-                # second column on max result is index of where max element was
-                # found, so we pick action with the larger expected reward.
+                # Get the action with the best expected reward
                 return self.policy_net(state).max(1).indices.view(1, 1)
         else:
             return torch.tensor([[self.env.action_space.sample()]], device=self.device, dtype=torch.long)
@@ -133,13 +129,8 @@ class DQNAgent:
         if len(self.memory) < batch_size:
             return
         transitions = self.memory.sample(batch_size)
-        # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
-        # detailed explanation). This converts batch-array of Transitions
-        # to Transition of batch-arrays.
         batch = Transition(*zip(*transitions))
 
-        # Compute a mask of non-final states and concatenate the batch elements
-        # (a final state would've been the one after which simulation ended)
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
                                                 batch.next_state)), device=self.device, dtype=torch.bool)
         non_final_next_states = torch.cat([s for s in batch.next_state
@@ -148,16 +139,9 @@ class DQNAgent:
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
 
-        # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
-        # columns of actions taken. These are the actions which would've been taken
-        # for each batch state according to policy_net
+        # Compute Q(s_t) and Q(s_{t+1})
         state_action_values = self.policy_net(state_batch).gather(1, action_batch)
 
-        # Compute V(s_{t+1}) for all next states.
-        # Expected values of actions for non_final_next_states are computed based
-        # on the "older" target_net; selecting their best reward with max(1).values
-        # This is merged based on the mask, such that we'll have either the expected
-        # state value or 0 in case the state was final.
         next_state_values = torch.zeros(batch_size, device=self.device)
         with torch.no_grad():
             if self.double:
@@ -166,17 +150,15 @@ class DQNAgent:
                     non_final_next_states).gather(1, next_state_actions).squeeze(1)
             else:
                 next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1).values
-        # Compute the expected Q values
+
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
-        # Compute Huber loss
         criterion = nn.SmoothL1Loss()
         loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
 
-        # Optimize the model
         self.optimizer.zero_grad()
         loss.backward()
-        # In-place gradient clipping
+
         torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100)
         self.optimizer.step()
 
@@ -226,6 +208,8 @@ if __name__ == '__main__':
     parser.add_argument('--independent_state', action='store_true', default=False,
                         help="Dont use metrics from other pods (except for available resources)")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
+    parser.add_argument('--five', action='store_true', default=False, help="Five actions for dqn")
+    parser.add_argument('--eleven', action='store_true', default=False, help="Eleven actions for dqn")
     parser.add_argument('--reset_env', action='store_true', default=False, help="Resetting the env every 10th episode")
     args = parser.parse_args()
 
@@ -244,6 +228,9 @@ if __name__ == '__main__':
     independent_state = args.independent_state
     reset_env = args.reset_env
 
+    five_actions_env = args.five
+    eleven_actions_env = args.eleven
+
     MEMORY_SIZE = 1000
     EPISODES = args.episodes
 
@@ -258,6 +245,7 @@ if __name__ == '__main__':
     set_container_cpu_values(cpus=100)
 
     parent_dir = 'src/model_metric_data/dqn'
+    # parent_dir = 'src/model_metric_data/dqn_j_experiments'
     MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{rf}_rf_{reqs_per_second}rps{alpha}alpha'
     if not variable_resources:
         MODEL += f'{RESOURCES}res'
@@ -266,6 +254,10 @@ if __name__ == '__main__':
     MODEL += ''.join(suffixes)
     if independent_state:
         MODEL += "_independent_state"
+    if five_actions_env:
+        MODEL += "_five_actions"
+    if eleven_actions_env:
+        MODEL += "_eleven_actions"
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
 
     print(
@@ -273,7 +265,14 @@ if __name__ == '__main__':
         f"interval {interval} ms, rps {reqs_per_second}")
 
     n_agents = args.n_agents
-    envs = [DiscreteElasticityEnv(i, independent_state=independent_state) for i in range(1, n_agents + 1)]
+
+    if five_actions_env:
+        envs = [FiveDiscreteElasticityEnv(i, independent_state=independent_state) for i in range(1, n_agents + 1)]
+    elif eleven_actions_env:
+        envs = [ElevenDiscrElasticityEnv(i, independent_state=independent_state) for i in range(1, n_agents + 1)]
+    else:
+        envs = [DiscreteElasticityEnv(i, independent_state=independent_state) for i in range(1, n_agents + 1)]
+
     other_envs = [[env for env in envs if env != envs[i]] for i in
                   range(len(envs))]  # For every env its other envs (pre-computing), used for priority and utilization
 
@@ -287,10 +286,14 @@ if __name__ == '__main__':
     train_priority = False
     match priority:
         case 1:
+            envs[0].priority = 1.0
+            envs[1].priority = 1.0
+            envs[2].priority = 1.0
+        case 2:
             envs[0].priority = 0.1
             envs[1].priority = 1.0
             envs[2].priority = 0.1
-        case 2:
+        case 3:
             envs[0].priority = 1.0
             envs[1].priority = 0.1
             envs[2].priority = 0.1
@@ -300,7 +303,9 @@ if __name__ == '__main__':
 
     set_available_resource(envs, RESOURCES)
 
-    agents = [DQNAgent(env, double=double, dueling=dueling, device=str(device), memory_size=MEMORY_SIZE) for env in envs]
+    eps_start, eps_end, eps_decay = 0.9, 0.15, 1000
+    agents = [DQNAgent(env, double=double, dueling=dueling, device=str(device), memory_size=MEMORY_SIZE,
+                       epsilon=eps_start, epsilon_decay=eps_decay, epsilon_min=eps_end) for env in envs]
 
     if weights_dir:
         for i, agent in enumerate(agents):

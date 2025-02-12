@@ -13,6 +13,20 @@ from train_ppo import PPO
 
 def initialize_agent(id=None, resources=1000, tl_agent=None, model=None, algorithm='ppo', independent=False,
                       priority=1.0, scale_action=None, pod_name=None):
+    '''
+    Function to initialize an agent with the given parameters for inference purpose
+
+    :param id: The id of the agent
+    :param resources: The total resources available
+    :param tl_agent: The agent id to transfer learning from
+    :param model: The model to load
+    :param algorithm: The algorithm to use (mdqn, ppo, ddpg)
+    :param independent: Whether the agent has independent state
+    :param priority: The priority of the agent, [0.0, 1.0]
+    :param scale_action: The scale action value
+    :param pod_name: The name of the pod
+    :return: The environment and the agent
+    '''
     if not model:
         raise ValueError("Please provide a model to load")
     

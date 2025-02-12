@@ -52,21 +52,6 @@ class OUNoise(object):
         return np.clip(action + ou_state, self.low, self.high)
 
 
-# https://github.com/openai/gym/blob/master/gym/core.py
-class NormalizedEnv(gym.Wrapper):
-    """ Wrap action """
-
-    def _action(self, action):
-        act_k = (self.action_space.high - self.action_space.low) / 2.
-        act_b = (self.action_space.high + self.action_space.low) / 2.
-        return act_k * action + act_b
-
-    def _reverse_action(self, action):
-        act_k_inv = 2. / (self.action_space.high - self.action_space.low)
-        act_b = (self.action_space.high + self.action_space.low) / 2.
-        return act_k_inv * (action - act_b)
-
-
 class Memory:
     def __init__(self, max_size):
         self.max_size = max_size
@@ -220,6 +205,7 @@ class DDPGagent():
             torch.load(f"{folder_path}/agent_{agent_id}_actor.pth", map_location=lambda storage, loc: storage, weights_only=True))
         self.critic.load_state_dict(
             torch.load(f"{folder_path}/agent_{agent_id}_critic.pth", map_location=lambda storage, loc: storage, weights_only=True))
+        print(f"Successfully loaded weights from {folder_path}")
 
     def save(self, folder_path, agent_id=None):
         torch.save(self.actor.state_dict(), f"{folder_path}/agent_{agent_id}_actor.pth")
@@ -331,18 +317,13 @@ if __name__ == "__main__":
             print("Using default priority setting... which is training priority...")
 
     agents = [DDPGagent(env, hidden_size=64, max_memory_size=5000, sigmoid_output=instant) for env in envs]
-    # decay_period = envs[0].MAX_STEPS * episodes / 1.1 # Makes sense for now
-    decay_period = envs[0].MAX_STEPS * episodes / 2.5
-    # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]
-    # noises = [OUNoise(env.action_space, max_sigma=0.25, min_sigma=0.025, decay_period=decay_period) for env in envs]
+    decay_period = envs[0].MAX_STEPS * episodes / 3.5
     noises = [OUNoise(env.action_space, max_sigma=max_sigma, min_sigma=min_sigma, decay_period=decay_period) for env in
               envs]
-    # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0, decay_period=decay_period) for env in envs]
-    # noises = [OUNoise(env.action_space, max_sigma=0.07, min_sigma=0, decay_period=decay_period) for env in envs]
-    # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=1250) for env in envs]
     print(f"Noise max sigma: {max_sigma}, decay period: {decay_period}, min sigma: {min_sigma}")
 
     parent_dir = 'src/model_metric_data/ddpg'
+    # parent_dir = 'src/model_metric_data/ddpg_j_experiments'
     MODEL = f'{episodes}ep_2rf_{reqs_per_second}rps{ALPHA_CONSTANT}alpha'
     if instant:
         MODEL += '_instant'
@@ -442,7 +423,6 @@ if __name__ == "__main__":
                 new_state = np.array(new_state).flatten()
                 set_available_resource(envs, RESOURCES)
 
-                # reward = alpha * agent_reward + (1 - alpha) * shared_reward
                 reward = 0.5 * agent_reward + shared_reward
 
                 agents[i].memory.push(states[i], actions[i], reward, new_state, done)

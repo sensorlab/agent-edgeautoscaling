@@ -21,10 +21,6 @@ if __name__ == '__main__':
     # Test Settings
     algorithms = ['thold', 'dqn', 'ppo', 'ddpg']
     
-    # Results are the same for thold (lets say)
-    # algorithms = ['dqn', 'ppo', 'ddpg']
-    # algorithms = ['ddpg']
-    # algorithms = ['ppo']
     recordings = 20
     num_iterations = 21
     rps = 100
@@ -246,3 +242,5 @@ if __name__ == '__main__':
     pickle.dump(deltas_0, open(os.path.join(folder_path, 'deltas_0.p'), 'wb'))
     pickle.dump(deltas_1, open(os.path.join(folder_path, 'deltas_1.p'), 'wb'))
     pickle.dump(deltas_2, open(os.path.join(folder_path, 'deltas_2.p'), 'wb'))
+
+    print(f"Results for {num_iterations} iterations with {recordings} recordings each saved in {folder_path}")

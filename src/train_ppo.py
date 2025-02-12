@@ -414,7 +414,7 @@ if __name__ == "__main__":
     # initial_action_std = initial_action_std
     action_std_decay_rate = 0.05
     min_action_std = 0.1
-    action_std_decay_freq = total_steps // 25  # Frequency of decay
+    action_std_decay_freq = total_steps // 30  # Frequency of decay
 
     print(
         f"Settings for PPO: {episodes} episodes, {n_agents} agents, {initial_action_std} initial action std, "
@@ -430,6 +430,7 @@ if __name__ == "__main__":
         agent.policy_old.train()
 
     parent_dir = 'src/model_metric_data/ppo'
+    # parent_dir = 'src/model_metric_data/ppo_j_experiments'
     # MODEL = f'{episodes}ep{RESOURCES}resources_rf_{reward_function}_{reqs_per_second}rps{interval}interval{k_epochs}kepochs{ALPHA_CONSTANT}alpha{scale_action}scale_a{priority}priority'
     MODEL = f'{episodes}ep_rf_{reward_function}_{reqs_per_second}rps{k_epochs}kepochs{int(ALPHA_CONSTANT)}alpha{update_every}epupdate'
     if priority != 0:
@@ -566,8 +567,6 @@ if __name__ == "__main__":
 
                 set_available_resource(envs, RESOURCES)
 
-                # reward = alpha * agent_reward + (1 - alpha) * shared_reward
-                # reward = 10 + agent_reward * 10 + shared_reward
                 reward = 0.5 * agent_reward + shared_reward
 
                 utilization_all_step_rewards[i].append(agent_reward)
