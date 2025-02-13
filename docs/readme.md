@@ -1,4 +1,4 @@
-# Resouce Elasticity NANCY
+# Multi Agent Reinforcement Learning-based In-place Scaling Engine (MARLISE)
 
 In this project, the scaling approach involves deploying an agent per pod, which is a vertical 
 scaling strategy. This method is particularly well-suited for stateful applications. 
@@ -113,8 +113,7 @@ The Backend handles the elasticity by itself, but offers API intreface for contr
 
 ## Frontend
 
-For the frontend that is connected to the above aforementioned Backend, refer to the following repository:
-- [Resource Elasticity Nancy Visualization](https://github.com/wrathchild14/resource-elastisity-nancy-visualization/)
+For the frontend that is connected to the above aforementioned Backend, refer to the following [repository](https://github.com/wrathchild14/resource-elastisity-nancy-visualization/).
 
 ## Notes
 
