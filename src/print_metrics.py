@@ -21,7 +21,8 @@ if __name__ == '__main__':
 
             print("Containers-------")
             for container_id, (pod_name, container_name, pod_ip) in list(node.get_containers().items()):
-                (cpu_limit, cpu, cpu_percentage), (memory_limit, memory, memory_percentage), (rx, tx), throttled = node.get_container_usage(container_id)
+                (cpu_limit, cpu, cpu_percentage), (memory_limit, memory, memory_percentage), (
+                    rx, tx), throttled = node.get_container_usage(container_id)
                 print(f"Usage for container {pod_name} at pod {container_name}:{pod_ip}")
                 print(f"CPU Usage : {cpu:.2f} mC, {cpu_percentage:.2f}%, limit {cpu_limit} mC")
                 print(f"Memory Usage: {memory:.2f} MB, {memory_percentage:.2f}%, limit {memory_limit} MB")
@@ -30,8 +31,9 @@ if __name__ == '__main__':
 
                 cpu_limit = cpu_limit
                 cpu = cpu
-                print(f"\nState for container {pod_name}, percentage: {cpu_percentage}, throttled {throttled}: [{cpu_limit}, {cpu}, available_placeholder]\n")
-
+                print(
+                    f"\nState for container {pod_name}, percentage: {cpu_percentage}, throttled {throttled}: "
+                    f"[{cpu_limit}, {cpu}, available_placeholder]\n")
 
         time.sleep(1)
         print("\033c")

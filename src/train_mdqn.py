@@ -1,23 +1,23 @@
-import math
-import random
-import time
-import numpy as np
-import subprocess
-import os
 import argparse
-
-from tqdm import tqdm
+import math
+import os
+import random
+import subprocess
+import time
 from collections import namedtuple, deque
 from itertools import count
 
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
+import torch.optim as optim
+from tqdm import tqdm
 
-from envs import DiscreteElasticityEnv, set_available_resource, set_other_priorities, set_other_utilization
-from spam_cluster import get_response_times
+from envs import (DiscreteElasticityEnv, FiveDiscreteElasticityEnv, ElevenDiscrElasticityEnv, 
+                  set_available_resource, set_other_priorities, set_other_utilization)
 from pod_controller import set_container_cpu_values, get_loadbalancer_external_port
+from spam_cluster import get_response_times
 from utils import save_training_data
 
 
@@ -27,7 +27,6 @@ class ReplayMemory(object):
         self.memory = deque([], maxlen=capacity)
 
     def push(self, *args):
-        """Save a transition"""
         self.memory.append(Transition(*args))
 
     def sample(self, batch_size):
@@ -35,7 +34,7 @@ class ReplayMemory(object):
 
     def __len__(self):
         return len(self.memory)
-    
+
 
 class DQN(nn.Module):
 
@@ -46,8 +45,6 @@ class DQN(nn.Module):
         self.layer3 = nn.Linear(hidden_size * 2, hidden_size)
         self.layer4 = nn.Linear(hidden_size, n_actions)
 
-    # Called with either one element to determine next action, or a batch
-    # during optimization. Returns tensor([[left0exp,right0exp]...]).
     def forward(self, x):
         x = F.relu(self.layer1(x))
         x = F.relu(self.layer2(x))
@@ -63,13 +60,13 @@ class DuelingDQN(nn.Module):
             nn.Linear(n_observations, 128),
             nn.ReLU()
         )
-        
+
         self.advantage = nn.Sequential(
             nn.Linear(128, 128),
             nn.ReLU(),
             nn.Linear(128, n_actions)
         )
-        
+
         self.value = nn.Sequential(
             nn.Linear(128, 128),
             nn.ReLU(),
@@ -87,7 +84,8 @@ Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'
 
 
 class DQNAgent:
-    def __init__(self, env, double=False, dueling=False, hidden_size=64, learning_rate=1e-4, gamma=0.99, epsilon=0.9, epsilon_min=0.15, epsilon_decay=1500, memory_size=1000, device="cpu"):
+    def __init__(self, env, double=False, dueling=False, hidden_size=64, learning_rate=1e-4, gamma=0.99, epsilon=0.9,
+                 epsilon_min=0.15, epsilon_decay=1500, memory_size=1000, device="cpu"):
         self.hidden_size = hidden_size
         self.learning_rate = learning_rate
         self.gamma = gamma
@@ -112,19 +110,17 @@ class DQNAgent:
         state = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
         act_values = self.policy_net(state)
         return torch.argmax(act_values[0]).item()
-    
+
     def select_action(self, state):
         sample = random.random()
         eps_threshold = self.epsilon_min + (self.epsilon - self.epsilon_min) * \
-            math.exp(-1. * self.steps_done / self.epsilon_decay)
+                        math.exp(-1. * self.steps_done / self.epsilon_decay)
         if self.steps_done % 100 == 0:
             print(f"eps_threshold: {eps_threshold} at step {self.steps_done}")
         self.steps_done += 1
         if sample > eps_threshold:
             with torch.no_grad():
-                # t.max(1) will return the largest column value of each row.
-                # second column on max result is index of where max element was
-                # found, so we pick action with the larger expected reward.
+                # Get the action with the best expected reward
                 return self.policy_net(state).max(1).indices.view(1, 1)
         else:
             return torch.tensor([[self.env.action_space.sample()]], device=self.device, dtype=torch.long)
@@ -133,54 +129,41 @@ class DQNAgent:
         if len(self.memory) < batch_size:
             return
         transitions = self.memory.sample(batch_size)
-        # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
-        # detailed explanation). This converts batch-array of Transitions
-        # to Transition of batch-arrays.
         batch = Transition(*zip(*transitions))
 
-        # Compute a mask of non-final states and concatenate the batch elements
-        # (a final state would've been the one after which simulation ended)
         non_final_mask = torch.tensor(tuple(map(lambda s: s is not None,
-                                            batch.next_state)), device=self.device, dtype=torch.bool)
+                                                batch.next_state)), device=self.device, dtype=torch.bool)
         non_final_next_states = torch.cat([s for s in batch.next_state
-                                                    if s is not None])
+                                           if s is not None])
         state_batch = torch.cat(batch.state)
         action_batch = torch.cat(batch.action)
         reward_batch = torch.cat(batch.reward)
 
-        # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
-        # columns of actions taken. These are the actions which would've been taken
-        # for each batch state according to policy_net
+        # Compute Q(s_t) and Q(s_{t+1})
         state_action_values = self.policy_net(state_batch).gather(1, action_batch)
 
-        # Compute V(s_{t+1}) for all next states.
-        # Expected values of actions for non_final_next_states are computed based
-        # on the "older" target_net; selecting their best reward with max(1).values
-        # This is merged based on the mask, such that we'll have either the expected
-        # state value or 0 in case the state was final.
         next_state_values = torch.zeros(batch_size, device=self.device)
         with torch.no_grad():
             if self.double:
                 next_state_actions = self.policy_net(non_final_next_states).max(1)[1].unsqueeze(1)
-                next_state_values[non_final_mask] = self.target_net(non_final_next_states).gather(1, next_state_actions).squeeze(1)
+                next_state_values[non_final_mask] = self.target_net(
+                    non_final_next_states).gather(1, next_state_actions).squeeze(1)
             else:
                 next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1).values
-        # Compute the expected Q values
+
         expected_state_action_values = (next_state_values * self.gamma) + reward_batch
 
-        # Compute Huber loss
         criterion = nn.SmoothL1Loss()
         loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
 
-        # Optimize the model
         self.optimizer.zero_grad()
         loss.backward()
-        # In-place gradient clipping
+
         torch.nn.utils.clip_grad_value_(self.policy_net.parameters(), 100)
         self.optimizer.step()
-    
+
     def load(self, folder_path, agent_id=None):
-        self.policy_net.load_state_dict(torch.load(f"{folder_path}/model_weights_agent_{agent_id}.pth"))
+        self.policy_net.load_state_dict(torch.load(f"{folder_path}/model_weights_agent_{agent_id}.pth", weights_only=True))
         self.target_net.load_state_dict(self.policy_net.state_dict())
         print(f"Loaded weights for agent {agent_id}, located: {folder_path}")
 
@@ -188,7 +171,7 @@ class DQNAgent:
         torch.save(self.policy_net.state_dict(), path)
 
     def load_checkpoint(self, path):
-        self.policy_net.load_state_dict(torch.load(path))
+        self.policy_net.load_state_dict(torch.load(path, weights_only=True))
         self.target_net.load_state_dict(self.policy_net.state_dict())
         print(f"Loaded checkpoint located: {path}")
 
@@ -206,7 +189,8 @@ if __name__ == '__main__':
     parser.add_argument('--episodes', type=int, default=300)
     parser.add_argument('--init_resources', type=int, default=500)
     parser.add_argument('--increment_action', type=int, default=25)
-    parser.add_argument('--alpha', type=float, default=5.0, help="Weight for the shared reward, higher the more weight to response time, lower the more weight to efficiency")
+    parser.add_argument('--alpha', type=float, default=5.0,
+                        help="Weight for the shared reward, higher the more weight to response time, lower the more weight to efficiency")
     parser.add_argument('--n_agents', type=int, default=3)
     parser.add_argument('--rps', type=int, default=50, help="Requests per second for loading cluster")
     parser.add_argument('--interval', type=int, default=1000, help="Milliseconds interval for requests")
@@ -214,13 +198,18 @@ if __name__ == '__main__':
     parser.add_argument('--reward_function', type=int, default=2, help="Setting for the reward function")
 
     parser.add_argument('--variable_resources', type=bool, default=False, help="Random resources every 10 episodes")
-    parser.add_argument('--load_weights', type=str, default=False, help="Load weights from previous training with a string of the model parent directory")
+    parser.add_argument('--load_weights', type=str, default=False,
+                        help="Load weights from previous training with a string of the model parent directory")
 
-    parser.add_argument('--random_rps', action='store_true', default=False, help="Train on random requests every episode")
+    parser.add_argument('--random_rps', action='store_true', default=False,
+                        help="Train on random requests every episode")
     parser.add_argument('--dueling', action='store_true', default=False, help="Dueling rl")
     parser.add_argument('--double', action='store_true', default=False, help="Double rl")
-    parser.add_argument('--independent_state', action='store_true', default=False, help="Dont use metrics from other pods (except for available resources)")
+    parser.add_argument('--independent_state', action='store_true', default=False,
+                        help="Dont use metrics from other pods (except for available resources)")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
+    parser.add_argument('--five', action='store_true', default=False, help="Five actions for dqn")
+    parser.add_argument('--eleven', action='store_true', default=False, help="Eleven actions for dqn")
     parser.add_argument('--reset_env', action='store_true', default=False, help="Resetting the env every 10th episode")
     args = parser.parse_args()
 
@@ -239,6 +228,9 @@ if __name__ == '__main__':
     independent_state = args.independent_state
     reset_env = args.reset_env
 
+    five_actions_env = args.five
+    eleven_actions_env = args.eleven
+
     MEMORY_SIZE = 1000
     EPISODES = args.episodes
 
@@ -253,20 +245,36 @@ if __name__ == '__main__':
     set_container_cpu_values(cpus=100)
 
     parent_dir = 'src/model_metric_data/dqn'
+    # parent_dir = 'src/model_metric_data/dqn_j_experiments'
     MODEL = f'mdqn{EPISODES}ep{MEMORY_SIZE}m{INCREMENT_ACTION}inc{rf}_rf_{reqs_per_second}rps{alpha}alpha'
     if not variable_resources:
         MODEL += f'{RESOURCES}res'
-    suffixes = ['_double' if double else '', '_dueling' if dueling else '', '_varres' if variable_resources else '', '_pretrained' if weights_dir else '']
+    suffixes = ['_double' if double else '', '_dueling' if dueling else '', '_varres' if variable_resources else '',
+                '_pretrained' if weights_dir else '']
     MODEL += ''.join(suffixes)
     if independent_state:
         MODEL += "_independent_state"
+    if five_actions_env:
+        MODEL += "_five_actions"
+    if eleven_actions_env:
+        MODEL += "_eleven_actions"
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
 
-    print(f"Initialized model {MODEL}, random_rps {randomize_reqs}, variable_resoruces {variable_resources}, interval {interval} ms, rps {reqs_per_second}")
+    print(
+        f"Initialized model {MODEL}, random_rps {randomize_reqs}, variable_resoruces {variable_resources}, "
+        f"interval {interval} ms, rps {reqs_per_second}")
 
     n_agents = args.n_agents
-    envs = [DiscreteElasticityEnv(i, independent_state=independent_state) for i in range(1, n_agents + 1)]
-    other_envs = [[env for env in envs if env != envs[i]] for i in range(len(envs))] # For every env its other envs (pre-computing), used for priority and utilization
+
+    if five_actions_env:
+        envs = [FiveDiscreteElasticityEnv(i, independent_state=independent_state) for i in range(1, n_agents + 1)]
+    elif eleven_actions_env:
+        envs = [ElevenDiscrElasticityEnv(i, independent_state=independent_state) for i in range(1, n_agents + 1)]
+    else:
+        envs = [DiscreteElasticityEnv(i, independent_state=independent_state) for i in range(1, n_agents + 1)]
+
+    other_envs = [[env for env in envs if env != envs[i]] for i in
+                  range(len(envs))]  # For every env its other envs (pre-computing), used for priority and utilization
 
     for i, env in enumerate(envs):
         env.MAX_CPU_LIMIT = RESOURCES
@@ -278,10 +286,14 @@ if __name__ == '__main__':
     train_priority = False
     match priority:
         case 1:
+            envs[0].priority = 1.0
+            envs[1].priority = 1.0
+            envs[2].priority = 1.0
+        case 2:
             envs[0].priority = 0.1
             envs[1].priority = 1.0
             envs[2].priority = 0.1
-        case 2:
+        case 3:
             envs[0].priority = 1.0
             envs[1].priority = 0.1
             envs[2].priority = 0.1
@@ -291,8 +303,10 @@ if __name__ == '__main__':
 
     set_available_resource(envs, RESOURCES)
 
-    agents = [DQNAgent(env, double=double, dueling=dueling, device=device, memory_size=MEMORY_SIZE) for env in envs]
-    
+    eps_start, eps_end, eps_decay = 0.9, 0.15, 1000
+    agents = [DQNAgent(env, double=double, dueling=dueling, device=str(device), memory_size=MEMORY_SIZE,
+                       epsilon=eps_start, epsilon_decay=eps_decay, epsilon_min=eps_end) for env in envs]
+
     if weights_dir:
         for i, agent in enumerate(agents):
             agent.load(weights_dir, agent_id=i)
@@ -303,7 +317,7 @@ if __name__ == '__main__':
     mean_rts = []
     agents_summed_rewards = [[] for _ in range(n_agents)]
     agents_mean_rts = [[] for _ in range(n_agents)]
-    
+
     url = f"http://localhost:{get_loadbalancer_external_port(service_name='ingress-nginx-controller')}"
     # url = f"http://localhost:30888/predict"
 
@@ -314,7 +328,7 @@ if __name__ == '__main__':
                 print(f"Checkpoint: Saved weights for agent {i}")
         if variable_resources and i_episode % 5 == 0:
             RESOURCES = random.choice([500, 750, 1000, 1250, 1500, 1750, 2000])
-            for env in envs: 
+            for env in envs:
                 env.MAX_CPU_LIMIT = RESOURCES
                 env.patch(100)
             print(f"Resources changed to {RESOURCES} for episode {i_episode}")
@@ -328,14 +342,16 @@ if __name__ == '__main__':
             for env in envs:
                 env.priority = random.randint(1, 10) / 10.0
 
-        command = ['python', 'src/spam_cluster.py', '--users', str(reqs_per_second), '--interval', str(interval), '--variable', '--all']
+        command = ['python', 'src/spam_cluster.py', '--users', str(reqs_per_second), '--interval', str(interval),
+                   '--variable', '--all']
         if randomize_reqs:
             command.append('--random_rps')
         spam_process = subprocess.Popen(command)
 
         states = [env.reset() for env in envs]
         set_available_resource(envs, RESOURCES)
-        states = [torch.tensor(np.array(state).flatten(), dtype=torch.float32, device=device).unsqueeze(0) for state in states]
+        states = [torch.tensor(np.array(state).flatten(), dtype=torch.float32, device=device).unsqueeze(0) for state in
+                  states]
 
         ep_rewards = 0
         ep_rts = []
@@ -345,12 +361,14 @@ if __name__ == '__main__':
 
         for t in count():
             time.sleep(1)
-            
-            rts = [np.mean([rt if rt is not None else 2 for rt in get_response_times(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
+
+            rts = [
+                np.mean([rt if rt is not None else 2 for rt in get_response_times(USERS, f'{url}/api{env.id}/predict')])
+                for env in envs]
             for i, rt in enumerate(rts):
                 agent_ep_mean_rt[i].append(rt)
 
-            rt = np.mean(rts) # Avg renspose time of all pods
+            rt = np.mean(rts)  # Avg renspose time of all pods
             ep_rts.append(rt)
 
             priority_weighted_rt = sum((1 + env.priority) * rt for env, rt in zip(envs, rts))
@@ -365,10 +383,10 @@ if __name__ == '__main__':
                     set_other_priorities(envs[i], other_envs[i])
 
                 observation, agent_reward, done, _ = envs[i].step(action.item(), rf)
-                set_available_resource(envs, RESOURCES) # heavy
+                set_available_resource(envs, RESOURCES)  # heavy
 
                 reward = 0.5 * agent_reward + shared_reward
-                
+
                 next_states.append(np.array(observation).flatten())
                 rewards.append(reward)
                 dones.append(done)
@@ -376,15 +394,20 @@ if __name__ == '__main__':
                     next_states[i] = None
 
                 if debug:
-                    print(f"{envs[i].id}: ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
+                    print(
+                        f"{envs[i].id}: ACTION: {action}, LIMIT: {envs[i].ALLOCATED}, "
+                        f"{envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, "
+                        f"reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, "
+                        f"agent_reward: {agent_reward:.2f}")
             if debug:
                 print()
-        
+
             [agents_ep_reward[i].append(rewards[i]) for i in range(n_agents)]
 
             ep_rewards += np.mean(rewards)
 
-            next_states = [torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(0) if observation is not None else None for observation in next_states]
+            next_states = [torch.tensor(observation, dtype=torch.float32, device=device).unsqueeze(
+                0) if observation is not None else None for observation in next_states]
             reward_tensors = [torch.tensor([reward], device=device) for reward in rewards]
 
             for agent in agents:
@@ -393,20 +416,21 @@ if __name__ == '__main__':
             states = next_states
             for agent in agents:
                 agent.update(BATCH_SIZE)
-            
+
             for agent in agents:
                 target_net_state_dict = agent.target_net.state_dict()
                 policy_net_state_dict = agent.policy_net.state_dict()
                 for key in policy_net_state_dict:
-                    target_net_state_dict[key] = policy_net_state_dict[key]*TAU + target_net_state_dict[key]*(1-TAU)
+                    target_net_state_dict[key] = policy_net_state_dict[key] * TAU + target_net_state_dict[key] * (
+                            1 - TAU)
                 agent.target_net.load_state_dict(target_net_state_dict)
 
             if any(dones):
                 break
-        
+
         mean_rts.append(np.mean(ep_rts))
         summed_rewards.append(ep_rewards)
-        
+
         [agents_summed_rewards[i].append(np.sum(reward)) for i, reward in enumerate(agents_ep_reward)]
         [agents_mean_rts[i].append(np.mean(rt)) for i, rt in enumerate(agent_ep_mean_rt)]
         print(f"Episode {i_episode} reward: {ep_rewards} mean response time: {np.mean(ep_rts)}")
@@ -424,10 +448,12 @@ if __name__ == '__main__':
         for env in envs:
             env.set_last_limit()
 
-    print(f'Completed {EPISODES} episodes with {np.mean(summed_rewards)} rewards and {np.mean(mean_rts)} mean response times.')
+    print(f'Completed {EPISODES} episodes with {np.mean(summed_rewards)} rewards '
+          f'and {np.mean(mean_rts)} mean response times.')
 
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):
             agent.save(f'{parent_dir}/{MODEL}', agent_id=i)
-    
-        save_training_data(f'{parent_dir}/{MODEL}', summed_rewards, mean_rts, agents_summed_rewards, agent_mean_rts=agents_mean_rts)
+
+        save_training_data(f'{parent_dir}/{MODEL}', summed_rewards, mean_rts, agents_summed_rewards,
+                           agent_mean_rts=agents_mean_rts)

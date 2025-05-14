@@ -1,6 +1,6 @@
-import requests
-
 from datetime import datetime
+
+import requests
 from kubernetes import client, config
 
 
@@ -24,11 +24,11 @@ class Node:
     __str__():
         Returns a string representation of the Node object.
     update_containers(debug=False, custom_label='app=localization'):
-        Updates the containers running on the node based on the specified label.
+        Updates the container objects running on the node pointer based on the specified label.
     get_containers():
         Returns the dictionary of containers.
     get_container_usage(container_id):
-        Retrieves the CPU usage statistics for a specific container.
+        Retrieves the resource usage metrics for a specific container.
     """
 
     def __init__(self, name, ca_ip, ip):
@@ -38,14 +38,13 @@ class Node:
         self.containers = dict()
 
     def __str__(self):
-        return (f"Node(name={self.name}, ip={self.ip}, ca_ip={self.ca_ip}, containers={self.containers})")
+        return f"Node(name={self.name}, ip={self.ip}, ca_ip={self.ca_ip}, containers={self.containers})"
 
-    def update_containers(self, debug=False, custom_label='type=ray'):
-        # self.containers = dict()
-        if debug:
-            config.load_kube_config()
-        else:
-            config.load_incluster_config()
+    def update_containers(self, debug=False, custom_label='type=ray', reset_containers=False):
+        if reset_containers:
+            self.containers = dict()
+
+        config.load_kube_config() if debug else config.load_incluster_config()
         v1 = client.CoreV1Api()
 
         try:
@@ -55,10 +54,11 @@ class Node:
             for pod in ret.items:
                 if pod.status.phase == "Running":
                     for container_status in pod.status.container_statuses:
-                        # make sure its the proper container
+                        # make sure it's the proper container
                         if container_status.name == custom_label.split("=")[-1]:
-                            self.containers[container_status.container_id.split("//")[1]] = (pod.metadata.name, container_status.name, pod.status.pod_ip)
-        
+                            self.containers[container_status.container_id.split("//")[1]] = (
+                                pod.metadata.name, container_status.name, pod.status.pod_ip)
+
         except Exception as e:
             print(f"Error: {e}")
 
@@ -75,10 +75,10 @@ class Node:
             if container:
                 # tweak the comparable metrics to -3 for more accurate metric
                 current_cpu_usage_nanoseconds = container["stats"][-1]["cpu"]["usage"]["total"]
-                previous_cpu_usage_nanoseconds = container["stats"][-3]["cpu"]["usage"]["total"]
+                previous_cpu_usage_nanoseconds = container["stats"][-2]["cpu"]["usage"]["total"]
 
                 current_timestamp_str = container["stats"][-1]["timestamp"].split('.')[0] + 'Z'
-                previous_timestamp_str = container["stats"][-3]["timestamp"].split('.')[0] + 'Z'
+                previous_timestamp_str = container["stats"][-2]["timestamp"].split('.')[0] + 'Z'
 
                 current_timestamp = datetime.strptime(current_timestamp_str, "%Y-%m-%dT%H:%M:%SZ")
                 previous_timestamp = datetime.strptime(previous_timestamp_str, "%Y-%m-%dT%H:%M:%SZ")
@@ -104,9 +104,12 @@ class Node:
 
                 network_rx_per_second_mb, network_tx_per_second_mb = self.get_throughput(time_interval_seconds)
 
-                throttled = container['stats'][-1]['cpu']['cfs']['throttled_time'] > container['stats'][-3]['cpu']['cfs']['throttled_time']
+                throttled = container['stats'][-1]['cpu']['cfs']['throttled_time'] > \
+                            container['stats'][-2]['cpu']['cfs']['throttled_time']
 
-                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (memory_limit_bytes / (1024 * 1024), memory_usage_megabytes, memory_usage_percentage), (network_rx_per_second_mb, network_tx_per_second_mb), throttled 
+                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (
+                    memory_limit_bytes / (1024 * 1024), memory_usage_megabytes, memory_usage_percentage), (
+                    network_rx_per_second_mb, network_tx_per_second_mb), throttled
             else:
                 print(f"Container {container_id} not found")
                 return (0, 0, 0), (0, 0, 0), (0, 0), (0, 0)
@@ -195,10 +198,13 @@ class Node:
                 io_write_prev = container["stats"][-2]["diskio"]["io_service_bytes"][0]['stats']['Write']
                 io_delta = io_write_curr - io_write_prev
                 io_write_per_second = io_delta / time_interval_seconds
-                
+
                 network_rx_per_second_mb, network_tx_per_second_mb = self.get_throughput(time_interval_seconds)
 
-                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (memory_limit_bytes, memory_usage_megabytes, memory_usage_percentage), (io_read_per_second, io_write_per_second), (network_rx_per_second_mb, network_tx_per_second_mb), (mem_usage_cache, mem_usage_rss, mem_usage_swap, mem_usage_mapped_file, mem_usage_working_set)
+                return (cpu_limit_mc, cpu_usage_millicores, cpu_usage_percentage), (
+                    memory_limit_bytes, memory_usage_megabytes, memory_usage_percentage), (
+                    io_read_per_second, io_write_per_second), (network_rx_per_second_mb, network_tx_per_second_mb), (
+                    mem_usage_cache, mem_usage_rss, mem_usage_swap, mem_usage_mapped_file, mem_usage_working_set)
             else:
                 print(f"Container {container_id} not found")
                 return (0, 0, 0), (0, 0, 0), (0, 0), (0, 0)
@@ -228,6 +234,9 @@ class Node:
             # print(f"Packets per second: {packets_per_second}")
 
             return (network_rx_per_second / (1024 * 1024)), (network_tx_per_second / (1024 * 1024))
+        else:
+            print("Failed to fetch containers stats")
+            return 0, 0
 
     def get_usage(self):
         summary_url = f"http://{self.ca_ip}:8080/api/v2.0/summary"
@@ -281,6 +290,7 @@ class Node:
             return total_cpu_capacity_millicores, total_memory_capacity
         else:
             print("Failed to fetch machine information.")
+            return 0, 0
 
     def get_allocated_resources(self):
         allocated_cpu = 0
@@ -317,7 +327,9 @@ class Node:
                 limit = filesystem['capacity']
                 available = filesystem['available']
                 percentage = (used / limit) * 100
-                return ((used / (1024 * 1024 * 1024)), (limit / (1024 * 1024 * 1024)), (available / (1024 * 1024 * 1024)), percentage)
+                return (
+                    (used / (1024 * 1024 * 1024)), (limit / (1024 * 1024 * 1024)), (available / (1024 * 1024 * 1024)),
+                    percentage)
             else:
                 print("Failed to fetch filesystem usage.")
         else:

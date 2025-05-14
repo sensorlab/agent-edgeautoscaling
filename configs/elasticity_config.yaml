@@ -1,11 +1,11 @@
-debug_deployment: true
+debug_deployment: false
 target_app_label: "app=localization-api"
 target_container_name: "localization-api"
 max_cpu: 1000
 min_cpu: 50
 upper_cpu: 60
 lower_cpu: 30
-action_interval: 5
+action_interval: 1
 max_steps: 60
 scale_action: 50
 discrete_increment: 25

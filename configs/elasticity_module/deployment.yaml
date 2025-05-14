@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elasticity-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticity-app
+  template:
+    metadata:
+      labels:
+        app: elasticity-app
+    spec:
+      nodeSelector:
+        cluster: vm
+      containers:
+        - name: elasticity-app
+          image: wrathchild14/elasticity:latest
+          imagePullPolicy: Always
+          ports:
+          - containerPort: 8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticity-app-service
+spec:
+  selector:
+    app: elasticity-app
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: elasticity-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: elastic.localhost
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: elasticity-app-service
+            port:
+              number: 8080

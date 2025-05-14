@@ -9,6 +9,8 @@ pyarrow
 requests
 scikit-learn
 scipy
-torch
 tqdm
 kubernetes
+uvicorn
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch

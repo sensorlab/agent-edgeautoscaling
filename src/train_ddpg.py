@@ -1,24 +1,25 @@
-from envs import ContinuousElasticityEnv, InstantContinuousElasticityEnv, set_other_utilization, set_other_priorities, set_available_resource
-from spam_cluster import get_response_times
-from pod_controller import set_container_cpu_values, get_loadbalancer_external_port
-from utils import save_training_data
-
+import argparse
 import os
+import random
 import subprocess
 import time
-import gymnasium as gym
-import random
-import numpy as np
 from collections import deque
-from tqdm import tqdm
-import argparse
 
+import gymnasium as gym
+import numpy as np
 import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
 import torch.autograd
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
 from torch.autograd import Variable
+from tqdm import tqdm
+
+from envs import (ContinuousElasticityEnv, InstantContinuousElasticityEnv, set_other_utilization, 
+                  set_other_priorities, set_available_resource)
+from pod_controller import set_container_cpu_values, get_loadbalancer_external_port
+from spam_cluster import get_response_times
+from utils import save_training_data
 
 
 # Ornstein-Ulhenbeck Process
@@ -49,21 +50,6 @@ class OUNoise(object):
         ou_state = self.evolve_state()
         self.sigma = self.max_sigma - (self.max_sigma - self.min_sigma) * min(1.0, t / self.decay_period)
         return np.clip(action + ou_state, self.low, self.high)
-
-
-# https://github.com/openai/gym/blob/master/gym/core.py
-class NormalizedEnv(gym.Wrapper):
-    """ Wrap action """
-
-    def _action(self, action):
-        act_k = (self.action_space.high - self.action_space.low) / 2.
-        act_b = (self.action_space.high + self.action_space.low) / 2.
-        return act_k * action + act_b
-
-    def _reverse_action(self, action):
-        act_k_inv = 2. / (self.action_space.high - self.action_space.low)
-        act_b = (self.action_space.high + self.action_space.low) / 2.
-        return act_k_inv * (action - act_b)
 
 
 class Memory:
@@ -148,7 +134,8 @@ class Actor(nn.Module):
 
 
 class DDPGagent():
-    def __init__(self, env, hidden_size=256, actor_learning_rate=3e-4, critic_learning_rate=1e-3, gamma=0.99, tau=1e-2, max_memory_size=50000, sigmoid_output=False):
+    def __init__(self, env, hidden_size=256, actor_learning_rate=3e-4, critic_learning_rate=1e-3, gamma=0.99, tau=1e-2,
+                 max_memory_size=50000, sigmoid_output=False):
         # Params
         self.num_states = env.observation_space.shape[0]
         self.num_actions = env.action_space.shape[0]
@@ -212,22 +199,26 @@ class DDPGagent():
 
         for target_param, param in zip(self.critic_target.parameters(), self.critic.parameters()):
             target_param.data.copy_(param.data * self.tau + target_param.data * (1.0 - self.tau))
-    
+
     def load(self, folder_path, agent_id):
-        self.actor.load_state_dict(torch.load(f"{folder_path}/agent_{agent_id}_actor.pth", map_location=lambda storage, loc: storage))
-        self.critic.load_state_dict(torch.load(f"{folder_path}/agent_{agent_id}_critic.pth", map_location=lambda storage, loc: storage))
-    
+        self.actor.load_state_dict(
+            torch.load(f"{folder_path}/agent_{agent_id}_actor.pth", map_location=lambda storage, loc: storage, weights_only=True))
+        self.critic.load_state_dict(
+            torch.load(f"{folder_path}/agent_{agent_id}_critic.pth", map_location=lambda storage, loc: storage, weights_only=True))
+        print(f"Successfully loaded weights from {folder_path}")
+
     def save(self, folder_path, agent_id=None):
         torch.save(self.actor.state_dict(), f"{folder_path}/agent_{agent_id}_actor.pth")
         torch.save(self.critic.state_dict(), f"{folder_path}/agent_{agent_id}_critic.pth")
-    
+
     def save_checkpoint(self, path):
         torch.save(self.actor.state_dict(), path + "_actor.pth")
         torch.save(self.critic.state_dict(), path + "_critic.pth")
 
     def load_checkpoint(self, path):
-        self.actor.load_state_dict(torch.load(path + "_actor.pth"))
-        self.critic.load_state_dict(torch.load(path + "_critic.pth"))
+        self.actor.load_state_dict(torch.load(path + "_actor.pth", weights_only=True))
+        self.critic.load_state_dict(torch.load(path + "_critic.pth", weights_only=True))
+
 
 def describe_env(env):
     print(f"Action Space: {env.action_space}")
@@ -239,31 +230,38 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--episodes', type=int, default=300)
     parser.add_argument('--init_resources', type=int, default=1000, help="Cpu resoruces given to the cluster")
-    parser.add_argument('--alpha', type=float, default=0.75, help="Weight for the shared reward, higher the more weight to response time, lower the more weight to efficiency")
+    parser.add_argument('--alpha', type=float, default=0.75,
+                        help="Weight for the shared reward, higher the more weight to response time, lower the more weight to efficiency")
     parser.add_argument('--n_agents', type=int, default=3)
-    parser.add_argument('--rps', type=int, default=50, help="Baseline bound of requests per second for loading cluster, if random, it is the upper bound")
-    parser.add_argument('--min_rps', type=int, default=10, help="Minimum Requests per second for loading cluster, if the random requests are enabled")
+    parser.add_argument('--rps', type=int, default=50,
+                        help="Baseline bound of requests per second for loading cluster, if random, it is the upper bound")
+    parser.add_argument('--min_rps', type=int, default=10,
+                        help="Minimum Requests per second for loading cluster, if the random requests are enabled")
     parser.add_argument('--interval', type=int, default=1000, help="Milliseconds interval for requests")
     parser.add_argument('--batch_size', type=int, default=64, help="Batch size for training")
     parser.add_argument('--scale_action', type=int, default=50, help="How much does the agent scale with an action")
-    parser.add_argument('--load_weights', type=str, default=False, help="Load weights from previous training with a string of the model parent directory")
+    parser.add_argument('--load_weights', type=str, default=False,
+                        help="Load weights from previous training with a string of the model parent directory")
     parser.add_argument('--max_sigma', type=float, default=0.25, help="Max sigma for noise")
     parser.add_argument('--min_sigma', type=float, default=0.01, help="Min sigma for noise")
 
-
     parser.add_argument('--priority', type=int, default=0, help="Options: 0, 1, 2")
 
-    parser.add_argument('--independent_state', action='store_true', default=False, help="Dont use metrics from other pods (except for available resources)")
+    parser.add_argument('--independent_state', action='store_true', default=False,
+                        help="Dont use metrics from other pods (except for available resources)")
     parser.add_argument('--make_checkpoints', action='store_true', default=False, help="Save weights every 5 episodes")
-    parser.add_argument('--random_rps', action='store_true', default=False, help="Train on random requests every episode")
+    parser.add_argument('--random_rps', action='store_true', default=False,
+                        help="Train on random requests every episode")
     parser.add_argument('--debug', action='store_true', default=False, help="Debug mode")
-    parser.add_argument('--variable_resources', action='store_true', default=False, help="Random resources every 10 episodes")
+    parser.add_argument('--variable_resources', action='store_true', default=False,
+                        help="Random resources every 10 episodes")
     parser.add_argument('--old_reward', action='store_true', default=False, help="Use the old reward function")
-    parser.add_argument('--instant', action='store_true', default=False, help="Use instant scaling elasticity environemnt")
+    parser.add_argument('--instant', action='store_true', default=False,
+                        help="Use instant scaling elasticity environemnt")
     parser.add_argument('--reset_env', action='store_true', default=False, help="Resetting the env every 10th episode")
     args = parser.parse_args()
 
-    SAVE_WEIGHTS = True # Always save weightsB)
+    SAVE_WEIGHTS = True  # Always save weightsB)
     weights_dir = args.load_weights
     RESOURCES = args.init_resources
     ALPHA_CONSTANT = args.alpha
@@ -295,7 +293,8 @@ if __name__ == "__main__":
     else:
         envs = [ContinuousElasticityEnv(i, independent_state=independent_state) for i in range(1, n_agents + 1)]
 
-    other_envs = [[env for env in envs if env != envs[i]] for i in range(len(envs))] # For every env its other envs (pre-computing), used for priority and utilization
+    other_envs = [[env for env in envs if env != envs[i]] for i in
+                  range(len(envs))]  # For every env its other envs (pre-computing), used for priority and utilization
     for i, env in enumerate(envs):
         env.MAX_CPU_LIMIT = RESOURCES
         env.scale_action = scale_action
@@ -318,17 +317,13 @@ if __name__ == "__main__":
             print("Using default priority setting... which is training priority...")
 
     agents = [DDPGagent(env, hidden_size=64, max_memory_size=5000, sigmoid_output=instant) for env in envs]
-    # decay_period = envs[0].MAX_STEPS * episodes / 1.1 # Makes sense for now
-    decay_period = envs[0].MAX_STEPS * episodes / 2.5
-    # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=decay_period) for env in envs]
-    # noises = [OUNoise(env.action_space, max_sigma=0.25, min_sigma=0.025, decay_period=decay_period) for env in envs]
-    noises = [OUNoise(env.action_space, max_sigma=max_sigma, min_sigma=min_sigma, decay_period=decay_period) for env in envs]
-    # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0, decay_period=decay_period) for env in envs]
-    # noises = [OUNoise(env.action_space, max_sigma=0.07, min_sigma=0, decay_period=decay_period) for env in envs]
-    # noises = [OUNoise(env.action_space, max_sigma=0.2, min_sigma=0.005, decay_period=1250) for env in envs]
+    decay_period = envs[0].MAX_STEPS * episodes / 3.5
+    noises = [OUNoise(env.action_space, max_sigma=max_sigma, min_sigma=min_sigma, decay_period=decay_period) for env in
+              envs]
     print(f"Noise max sigma: {max_sigma}, decay period: {decay_period}, min sigma: {min_sigma}")
 
     parent_dir = 'src/model_metric_data/ddpg'
+    # parent_dir = 'src/model_metric_data/ddpg_j_experiments'
     MODEL = f'{episodes}ep_2rf_{reqs_per_second}rps{ALPHA_CONSTANT}alpha'
     if instant:
         MODEL += '_instant'
@@ -344,7 +339,10 @@ if __name__ == "__main__":
         MODEL += "_pretrained"
     os.makedirs(f'{parent_dir}/{MODEL}', exist_ok=True)
 
-    print(f"Training {n_agents} agents for {episodes} episodes with {RESOURCES} resources, {reqs_per_second} requests per second, {interval} ms interval, {ALPHA_CONSTANT} alpha, {bs} batch size\nModel name {MODEL}\n")
+    print(
+        f"Training {n_agents} agents for {episodes} episodes with {RESOURCES} resources, "
+        f"{reqs_per_second} requests per second, {interval} ms interval, {ALPHA_CONSTANT} alpha, "
+        f"{bs} batch size\nModel name {MODEL}\n")
 
     rewards = []
     avg_rewards = []
@@ -368,7 +366,7 @@ if __name__ == "__main__":
                 env.MAX_CPU_LIMIT = RESOURCES
                 env.patch(100)
             print(f"Resources changed to {RESOURCES} for episode {episode}")
-        
+
         if episode % 10 == 0 and reset_env:
             for env in envs:
                 env.patch(100)
@@ -378,11 +376,12 @@ if __name__ == "__main__":
             for env in envs:
                 env.priority = random.randint(1, 10) / 10.0
 
-        command = ['python', 'src/spam_cluster.py', '--users', str(reqs_per_second), '--interval', str(interval), '--variable', '--all']
+        command = ['python', 'src/spam_cluster.py', '--users', str(reqs_per_second), '--interval', str(interval),
+                   '--variable', '--all']
         if randomize_reqs:
             command.append('--random_rps')
         spam_process = subprocess.Popen(command)
-        
+
         states = [np.array(env.reset()).flatten() for env in envs]
         set_available_resource(envs, RESOURCES)
 
@@ -397,10 +396,12 @@ if __name__ == "__main__":
             time.sleep(1)
             agents_step_rewards = []
 
-            rts = [np.mean([rt if rt is not None else 2 for rt in get_response_times(USERS, f'{url}/api{env.id}/predict')]) for env in envs]
+            rts = [
+                np.mean([rt if rt is not None else 2 for rt in get_response_times(USERS, f'{url}/api{env.id}/predict')])
+                for env in envs]
             for i, rt in enumerate(rts):
                 agents_ep_mean_rt[i].append(rt)
-            rt = np.mean(rts) # Avg response time of all pods
+            rt = np.mean(rts)  # Avg response time of all pods
             ep_rts.append(rt)
 
             priority_weighted_rt = sum((1 + env.priority) * rt for env, rt in zip(envs, rts))
@@ -422,7 +423,6 @@ if __name__ == "__main__":
                 new_state = np.array(new_state).flatten()
                 set_available_resource(envs, RESOURCES)
 
-                # reward = alpha * agent_reward + (1 - alpha) * shared_reward
                 reward = 0.5 * agent_reward + shared_reward
 
                 agents[i].memory.push(states[i], actions[i], reward, new_state, done)
@@ -433,17 +433,21 @@ if __name__ == "__main__":
                     agents[i].update(bs)
                 agents_step_rewards.append(reward)
                 if debug:
-                    print(f"{envs[i].id}: ACTION: {actions[i]}, LIMIT: {envs[i].ALLOCATED}, {envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, agent_reward: {agent_reward:.2f}")
+                    print(
+                        f"{envs[i].id}: ACTION: {actions[i]}, LIMIT: {envs[i].ALLOCATED}, "
+                        f"{envs[i].last_cpu_percentage:.2f}%, AVAILABLE: {envs[i].AVAILABLE}, "
+                        f"reward: {reward:.2f} state: {envs[i].state[-1]}, shared_reward: {shared_reward:.2f}, "
+                        f"agent_reward: {agent_reward:.2f}")
             if debug:
                 print()
 
             states = new_states
-            
+
             ep_rewards.append(np.mean(agents_step_rewards))
 
             if any(dones):
                 break
-        
+
         mean_rts.append(np.mean(ep_rts))
         rewards.append(sum(ep_rewards))
         [agents_summed_rewards[i].append(np.sum(reward)) for i, reward in enumerate(agents_ep_reward)]
@@ -458,14 +462,15 @@ if __name__ == "__main__":
                     time.sleep(1.5)
                 else:
                     break
-        
+
         for env in envs:
             env.set_last_limit()
-        
+
         print(f"Episode {episode} reward: {rewards[-1]} mean response time: {np.mean(ep_rts)}")
 
     if SAVE_WEIGHTS:
         for i, agent in enumerate(agents):
             agent.save(f"{parent_dir}/{MODEL}", agent_id=i)
-        
-        save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_rts, agents_summed_rewards, agent_mean_rts=agents_mean_rts)
+
+        save_training_data(f'{parent_dir}/{MODEL}', rewards, mean_rts, agents_summed_rewards,
+                           agent_mean_rts=agents_mean_rts)
