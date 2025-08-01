@@ -115,6 +115,26 @@ The Backend handles the elasticity by itself, but offers API intreface for contr
 
 For the frontend that is connected to the above aforementioned Backend, refer to the following [repository](https://github.com/wrathchild14/resource-elastisity-nancy-visualization/).
 
+## Citation
+
+Please cite our [paper](https://arxiv.org/abs/2507.07671v1) as follows:
+
+```
+@article{Prodanov2025,
+title = {Multi-agent Reinforcement Learning-based In-place Scaling Engine for Edge-cloud Systems},
+journal = {IEEE Cloud},
+year = {2025},
+doi = {https://doi.org/10.48550/arXiv.2507.07671},
+url = {[https://www.sciencedirect.com/science/article/pii/S1084804525000773](https://arxiv.org/abs/2507.07671v1)},
+author = {Jovan Prodanov and Blaž Bertalanič and Carolina Fortuna and Shih-Kai Chou and Matjaž Branko Jurič and Ramon Sanchez-Iborra and Jernej Hribar}
+}
+```
+
+## Acknowledgment
+
+This work was funded in part by the Slovenian Research Agency (grants P2-0016 and MN-0009-106), by grant PID2023-148104OB-C43 funded by MICIU/AEI/10.13039/501100011033 and co-funded by
+ERDF/EU, by the European Commission NANCY project (No. 101096456), and by the HORIZON-MSCA-PF project TimeSmart (No. 101063721).
+
 ## Notes
 
 - Ensure all containers are running the same Python version.
