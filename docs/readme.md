@@ -125,7 +125,7 @@ title = {Multi-agent Reinforcement Learning-based In-place Scaling Engine for Ed
 journal = {IEEE Cloud},
 year = {2025},
 doi = {https://doi.org/10.48550/arXiv.2507.07671},
-url = {[https://www.sciencedirect.com/science/article/pii/S1084804525000773](https://arxiv.org/abs/2507.07671v1)},
+url = {[https://arxiv.org/abs/2507.07671v1]},
 author = {Jovan Prodanov and Blaž Bertalanič and Carolina Fortuna and Shih-Kai Chou and Matjaž Branko Jurič and Ramon Sanchez-Iborra and Jernej Hribar}
 }
 ```
