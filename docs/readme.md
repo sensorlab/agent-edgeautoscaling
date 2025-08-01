@@ -5,10 +5,14 @@ scaling strategy. This method is particularly well-suited for stateful applicati
 The system is highly scalable because we can add an agent for every pod, and the interval of 
 scaling can be as low as 1 second, allowing for rapid adjustments to resource demands.
 
-### Installation video
+### Demo Videos
 
-[![MARLISE autoscaling](https://img.youtube.com/vi/mA-iHkjI4GY/hqdefault.jpg)](https://www.youtube.com/watch?v=VtYxbE2PRTM)
-[![MARLISE application autoscaling](https://img.youtube.com/vi/mA-iHkjI4GY/hqdefault.jpg)](https://www.youtube.com/watch?v=vcB1Mr2B-O0)
+🎥 [**MARLISE Autoscaling Overview**](https://www.youtube.com/watch?v=VtYxbE2PRTM)  
+[![MARLISE autoscaling](https://img.youtube.com/vi/VtYxbE2PRTM/hqdefault.jpg)](https://www.youtube.com/watch?v=VtYxbE2PRTM)
+
+🎯 [**MARLISE Application Autoscaling Demo**](https://www.youtube.com/watch?v=vcB1Mr2B-O0)  
+[![MARLISE application autoscaling](https://img.youtube.com/vi/vcB1Mr2B-O0/hqdefault.jpg)](https://www.youtube.com/watch?v=vcB1Mr2B-O0)
+
 
 ## File Structure
 
