@@ -5,6 +5,11 @@ scaling strategy. This method is particularly well-suited for stateful applicati
 The system is highly scalable because we can add an agent for every pod, and the interval of 
 scaling can be as low as 1 second, allowing for rapid adjustments to resource demands.
 
+### Installation video
+
+[![MARLISE autoscaling](https://img.youtube.com/vi/mA-iHkjI4GY/hqdefault.jpg)](https://www.youtube.com/watch?v=VtYxbE2PRTM)
+[![MARLISE application autoscaling](https://img.youtube.com/vi/mA-iHkjI4GY/hqdefault.jpg)](https://www.youtube.com/watch?v=vcB1Mr2B-O0)
+
 ## File Structure
 
 Scripts are meant to run from the project root folder.
